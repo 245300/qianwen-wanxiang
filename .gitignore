@@ -31,6 +31,11 @@ _dev/bnf_staging/
 _dev/tmp/
 # 由「打包提交.bat」生成的提交包（与主目录内容重复）
 千纹万象_submit/
+# AI 生成过程记录与中间产物（约 24 MB，含生成凭据，供《AI 使用说明》复核）
+# —— 是重要证据链，但不适合公开仓库：含提示词原文与大量中间图
+_demo_work/
+# Owen Jones 原书扫描参考页（约 27 MB，仅考据用；文字考据已存 docs/真迹图版原书说明.json）
+_pages/
 # Python 字节码缓存
 __pycache__/
 *.pyc
