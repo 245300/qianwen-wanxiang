@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>千纹万象——中国传统纹样生成式数字体验</title>
+<link rel="preload" href="assets/fonts/qw-serif-bold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/style.css?v=20261014n">
+</head>
+<body>
+<!-- 主题早应用（防首帧闪烁）：素 su / 宣纸 xuan / 墨夜 mo，与 app.js 的 applyTheme 同一套存储键 -->
+<script>try{var _t=localStorage.getItem("qianwen_theme");if(_t!=="xuan"&&_t!=="mo")_t="su";document.body.setAttribute("data-theme",_t);document.body.setAttribute("data-hall",_t==="mo"?"dark":"light");}catch(e){}</script>
+<!-- 语言早应用（同上，防首帧闪烁）：中文 zh / 英文 en，与 js/i18n.js 的 I18n.KEY 同一存储键。
+     只写 lang 属性，真正的整页翻译由 i18n.js 在 DOMContentLoaded 后做。 -->
+<script>try{var _l=localStorage.getItem("qianwen_lang");document.documentElement.lang=_l==="en"?"en":"zh-CN";}catch(e){}</script>
+
+<!-- 顶部导航（全局） -->
+<nav class="nav" aria-label="主导航">
+  <div class="nav-brand" data-route="home" role="button" tabindex="0" aria-label="千纹万象 · 回到首页" title="回到首页">
+    <span class="seal-mini" aria-hidden="true" data-i18n-skip>纹</span>
+    <span class="nav-title">千纹万象</span>
+  </div>
+  <div class="nav-links">
+    <a href="#home" data-route="home">首页</a>
+    <a href="#jian" data-route="jian">鉴·纹库</a>
+    <a href="#fang" data-route="fang">坊·纹生</a>
+    <a href="#wu" data-route="wu">彩·物化</a>
+    <a href="#yuan" data-route="yuan">愿·纹签</a>
+    <a href="#about" data-route="about">关于</a>
+    <!-- 全站主题切换（素/宣纸/墨夜）：切换后所有页面统一使用所选背景，保存于本机 -->
+    <div class="theme-seg" role="group" aria-label="全站主题切换">
+      <button type="button" class="seg-btn" data-qwtheme="su" aria-pressed="false" title="素 · 绢帛米白（默认）">素</button>
+      <button type="button" class="seg-btn" data-qwtheme="xuan" aria-pressed="false" title="宣纸 · 暖白图录">宣纸</button>
+      <button type="button" class="seg-btn" data-qwtheme="mo" aria-pressed="false" title="墨夜 · 深墨夜读">墨夜</button>
+    </div>
+    <!-- 中英切换：面向国际传播（赛项指南「讲好中国故事」）。
+         语言偏好存本机，与主题切换键并列；切回中文时由 i18n.js 还原原文。 -->
+    <button type="button" class="seg-btn lang-btn" id="langBtn" data-i18n-skip aria-pressed="false" title="Switch to English" aria-label="Switch to English">EN</button>
+  </div>
+</nav>
+
+<main>
+<!-- ============ 一级 · 首页（海报 + 展厅入口） ============ -->
+<section class="page active" data-page="home" id="page-home">
+  <header class="hero" id="top">
+    <div class="hero-bg" id="heroBg">
+      <div id="heroSlides"><!-- 真实素材轮播，由 JS 生成 --></div>
+    </div>
+    <div class="hero-frame"></div>
+    <div class="hero-content">
+      <p class="hero-eyebrow">中国传统纹样生成式数字体验</p>
+      <h1 class="hero-title">千纹万象</h1>
+      <p class="hero-sub">古人的纹样，今天的算法。<br>
+      让沉睡在彩陶、青铜、织物上的真迹纹样，<br>在算法中重新生长，织出属于你的独一无二。</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#fang">进入纹样工坊</a>
+        <a class="btn btn-ghost" href="#jian">先去纹样图鉴</a>
+      </div>
+      <p class="hero-journey-hint">五个展厅不是五个工具，而是一幅纹样的一条路：<b>遇见 → 重塑 → 成器 → 寄愿 → 溯源</b>。</p>
+    </div>
+    <div class="hero-side" data-i18n-skip>生生不息 · 变化无穷</div>
+    <div class="hero-couplet left" data-i18n-skip>古法今承</div>
+    <div class="hero-couplet right" data-i18n-skip>纹生万象</div>
+    <div class="hero-credit" id="heroCredit"></div>
+    <div class="scroll-hint">五大展厅 · 敬请展卷</div>
+  </header>
+
+  <!-- 一幅纹样的旅程（P1-4 贯穿叙事线）：把五大展厅串成一条可走完的线 -->
+  <div class="journey-host" data-journey-host="home"></div>
+
+  <!-- 展厅导览 -->
+  <div class="home-entries">
+    <p class="home-entry-title">五 大 展 厅</p>
+    <div class="home-entry-grid">
+      <a class="home-card home-card-jian" href="#jian">
+        <span class="home-card-num">壹</span>
+        <span class="home-card-name">鉴 · 纹库</span>
+        <span class="home-card-desc"><span id="homePlateCount">115</span> 幅公版真迹 · 六大谱系考据</span>
+        <span class="home-card-art" aria-hidden="true"><img src="assets/patterns/plate002.jpg" alt="" loading="lazy" draggable="false"></span>
+      </a>
+      <a class="home-card home-card-fang" href="#fang">
+        <span class="home-card-num">贰</span>
+        <span class="home-card-name">坊 · 纹生</span>
+        <span class="home-card-desc">真迹 × 11 种骨架 × 六色，生万纹</span>
+        <span class="home-card-art" aria-hidden="true"><img src="assets/patterns/plate012.jpg" alt="" loading="lazy" draggable="false"></span>
+      </a>
+      <a class="home-card home-card-wu" href="#wu">
+        <span class="home-card-num">叁</span>
+        <span class="home-card-name">彩 · 物化</span>
+        <span class="home-card-desc">纹上瓷盘梅瓶 · AI 实物渲染</span>
+        <span class="home-card-art" aria-hidden="true"><img src="assets/patterns/fill01.jpg" alt="" loading="lazy" draggable="false"></span>
+      </a>
+      <a class="home-card home-card-yuan" href="#yuan">
+        <span class="home-card-num">肆</span>
+        <span class="home-card-name">愿 · 纹签</span>
+        <span class="home-card-desc">写心愿 · 大模型为你解签</span>
+        <span class="home-card-art" aria-hidden="true"><img src="assets/patterns/plate005.jpg" alt="" loading="lazy" draggable="false"></span>
+      </a>
+      <a class="home-card home-card-about" href="#about">
+        <span class="home-card-num">伍</span>
+        <span class="home-card-name">序 · 纹语</span>
+        <span class="home-card-desc">了解纹样千年 · 我们的创作</span>
+        <span class="home-card-art" aria-hidden="true"><img src="assets/patterns/plate020.jpg" alt="" loading="lazy" draggable="false"></span>
+      </a>
+    </div>
+    <p class="home-entry-foot">点击任一展馆进入 —— 或从上方导航随时切换</p>
+  </div>
+</section>
+
+<!-- ============ 二级 · 鉴·纹库 ============ -->
+<section class="page" data-page="jian">
+  <div class="section section-page section-alt">
+    <div class="journey-host" data-journey-host="jian"></div>
+    <div class="section-head">
+      <span class="section-num">壹</span>
+      <h2>鉴 · 纹库</h2>
+      <p class="section-en">真迹图版 · 六大谱系 · 千年纹样</p>
+    </div>
+    <p class="jian-tip">真迹图版全部取自公版典籍与博物馆开放获取藏品，来源逐幅标注；<span id="jianTotal">…</span> 幅 · 六大谱系 · 点击任一纹样查看详情</p>
+    <div class="jian-tools">
+      <input type="search" id="jianSearch" placeholder="搜索纹样名 / 器物 / 寓意…" autocomplete="off" aria-label="搜索纹样">
+      <div class="jian-filters" id="jianFilters" role="group" aria-label="按谱系筛选"></div>
+      <span class="jian-count" id="jianCount" role="status" aria-live="polite"></span>
+    </div>
+    <!-- 对比与挑战两个入口：把"逐幅看"升级为"摆在一起看"与"限时找" -->
+    <div class="jian-compare-bar">
+      <button type="button" id="jianCompareBtn" aria-pressed="false" title="点选两幅真迹，并排看谱系、器物考、寓意与同骨架织排差异">⇄ 对比纹样</button>
+      <button type="button" id="jianChallengeBtn" title="60 秒内按谱系/寓意/器物找出指定真迹，答对即自动入册">⏱ 限时挑战</button>
+      <span class="jian-compare-tip hidden" id="jianCompareTip" role="status" aria-live="polite"></span>
+    </div>
+    <div class="jian-grid" id="jianGrid"><!-- 由 JS 渲染 --></div>
+    <p class="jian-source">※ 纹样源流与寓意的文献依据，详见《作品介绍文档》参考资料部分；真迹图版来源与授权已在页内与文档中标注。</p>
+  </div>
+</section>
+
+<!-- ============ 三级 · 纹样详情 ============ -->
+<section class="page" data-page="plate">
+  <div class="section section-page">
+    <div class="crumb"><button class="btn-ghost-mini" id="plateBack">← 返回纹库</button></div>
+    <div class="journey-host" data-journey-host="plate"></div>
+    <div class="plate-detail" id="plateDetail"><!-- 由 JS 渲染 --></div>
+  </div>
+</section>
+
+<!-- ============ 二级 · 坊·纹生 ============ -->
+<section class="page" data-page="fang">
+  <div class="section section-page">
+    <div class="journey-host" data-journey-host="fang"></div>
+    <div class="section-head">
+      <span class="section-num">贰</span>
+      <h2>坊 · 纹生</h2>
+      <p class="section-en">选真迹 · 定骨架 · 配五色 · 生万纹</p>
+    </div>
+    <div class="workshop">
+      <aside class="panel">
+        <div class="panel-block">
+          <h3>一 · 选真迹</h3>
+          <div class="cat-row" id="catRow"></div>
+          <div class="chip-row" id="motifChips"></div>
+        </div>
+        <div class="panel-block">
+          <h3>二 · 定骨架</h3>
+          <div class="skeleton-row" id="skeletonChips">
+            <button data-skeleton="band">二方连续</button>
+            <button data-skeleton="grid">四方连续</button>
+            <button data-skeleton="medallion">适合纹样</button>
+            <button data-skeleton="scattered">散点平铺</button>
+            <button data-skeleton="vine">缠枝连续</button>
+            <button data-skeleton="diaper">锦地开光</button>
+            <button data-skeleton="caisson">藻井同心</button>
+            <button data-skeleton="cloud">云肩垂幔</button>
+            <button data-skeleton="diamond">菱格锦网</button>
+            <button data-skeleton="tiers">层带界格</button>
+            <button data-skeleton="tile" class="active">满铺平接</button>
+          </div>
+          <p class="skeleton-note" id="skeletonNote"></p>
+        </div>
+        <div class="panel-block">
+          <h3>三 · 配五色</h3>
+          <div class="chip-row" id="paletteChips"></div>
+        </div>
+        <div class="panel-block">
+          <h3>四 · 调密度</h3>
+          <input type="range" id="densityRange" min="0" max="100" value="45">
+          <p class="skeleton-note" id="densityNote"></p>
+        </div>
+        <div class="panel-block panel-toggle">
+          <label class="switch">
+            <input type="checkbox" id="mirrorToggle" checked>
+            <span class="slider"></span>
+          </label>
+          <span>对称镜像（连续骨架）</span>
+        </div>
+        <div class="panel-block panel-toggle">
+          <label class="switch">
+            <input type="checkbox" id="monoToggle">
+            <span class="slider"></span>
+          </label>
+          <span>纹色归一（融入所选配色）</span>
+        </div>
+        <div class="panel-actions">
+          <button class="btn btn-primary" id="randomBtn">随机一款</button>
+          <button class="btn btn-outline" id="collectBtn">收藏此纹样</button>
+          <button class="btn btn-outline" id="downloadBtn">下载纹样 PNG</button>
+          <button class="btn btn-outline" id="downloadSvgBtn">下载纹样 SVG（矢量）</button>
+          <button class="btn btn-outline" id="shareCardBtn" title="生成一张 1080×1080 分享卡：纹样 + 纹样密码 + 真迹考据，可发朋友圈（移动端直接唤起系统分享）">生成分享卡</button>
+        </div>
+        <div class="panel-block panel-code">
+          <h3>五 · 纹样密码</h3>
+          <p class="skeleton-note">每人生成的纹样都是唯一的——把你的纹样编成密码，好友输入即可复刻同款。</p>
+          <button class="btn btn-outline" id="genCodeBtn">生成纹样密码</button>
+          <div class="code-box hidden" id="codeBox">
+            <code id="patternCode"></code>
+            <button class="btn-ghost-mini" id="copyCodeBtn">复制</button>
+          </div>
+          <input type="text" id="decodeInput" placeholder="粘贴好友的纹样密码…" autocomplete="off">
+          <div class="panel-code-row">
+            <button class="btn btn-ghost" id="decodeBtn">复刻此纹样</button>
+            <span class="code-msg" id="codeMsg"></span>
+          </div>
+        </div>
+      </aside>
+      <div class="stage">
+        <canvas id="workCanvas" width="1024" height="1024" role="img"
+                aria-label="纹样生成预览：真迹与骨架实时织排的结果"></canvas>
+        <p class="stage-caption" id="stageCaption"></p>
+        <!-- 听·纹律：把当前骨架译成五声音阶的节奏（程序实时合成，点按才起声） -->
+        <div class="stage-sound">
+          <button class="btn-sound" id="soundBtn" type="button" aria-pressed="false"
+                  title="把当前骨架的构成法则译成五声音阶旋律（程序实时合成，无 AI、无采样）">▶ 听·纹律</button>
+          <span class="sound-note" id="soundNote">纹律译谱 · 骨架即节奏 · 程序合成无 AI 无采样</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 二级 · 彩·物化 ============ -->
+<section class="page" data-page="wu">
+  <div class="section section-page section-alt">
+    <div class="journey-host" data-journey-host="wu"></div>
+    <div class="section-head">
+      <span class="section-num">叁</span>
+      <h2>彩 · 物化</h2>
+      <p class="section-en">纹生万物 · 上盘上瓶上扇上锦</p>
+    </div>
+    <p class="mock-tip">工坊里"真迹 × 算法再创作"的纹样会实时投到下面四件器物上——回到工坊换个真迹或配色，这里的器物也会跟着变。也可以从下方"真迹直贴"选用公版图版原样上器物。</p>
+    <!-- 物化两栏：左画布展台 + 右操作栏（器型/当前纹样/真迹直贴）。DOM 重排但全部 id 原样保留 -->
+    <div class="wu-grid">
+      <div class="mock-stage">
+        <canvas id="mockCanvas" width="760" height="760" role="img"
+                aria-label="器物效果图预览：当前纹样投射到所选器物上的程序绘制结果"></canvas>
+        <div class="mock-actions">
+          <a class="btn btn-ghost" href="#fang">去工坊调纹样</a>
+          <button class="btn btn-outline" id="mockDownload">下载实物图 PNG</button>
+          <button class="btn btn-primary" id="mockAiBtn">AI 实物渲染</button>
+          <button class="btn btn-primary" id="mockVideoBtn">AI 全视角视频</button>
+          <button class="btn btn-ghost" id="mockDemoBtn" title="载入预置演示纹样，无需 API Key 即可查看 AI 示例结果">载入演示场景</button>
+        </div>
+        <p class="mock-demo-tip" id="mockDemoTip">未配置 API Key 时，点「载入演示场景」即可查看预生成的 AI 示例结果——页内会明确标注「示例结果 · 预生成」，不会冒充为本次实时生成。</p>
+        <div class="ai-result hidden" id="aiResult">
+          <div class="ai-result-head">
+            <span id="aiResultTag">AI 渲染中…</span>
+          </div>
+          <img id="aiResultImg" alt="AI 实物渲染结果">
+          <video id="aiResultVideo" class="hidden" controls playsinline loop muted></video>
+          <div class="ai-result-actions">
+            <a class="btn btn-outline" id="aiResultOpen" target="_blank" rel="noopener">查看原图</a>
+          </div>
+          <p class="ai-result-note" id="aiResultNote">※ 图像渲染由所接入的图像模型（默认 Agnes Image 2.5 Flash，可在「模型接入设置」中更换为任意 OpenAI 兼容平台的图像模型）基于左侧器物效果图做真实感升级（图生图），属 AI 二创；视频始终为"图生视频"——以本次 AI 实物渲染图为参考（未生成时自动先生成），保证器物纹样与预览一致，绝不使用文生视频导致纹样跑偏；器物效果图与再创作构图 100% 程序绘制。真迹图版素材为公有领域（来源已在页内标注）。主签文模型为书生 DeepSeek-V4-Flash-Vision。全部 AI 使用已在《AI 工具使用情况说明》中如实披露。</p>
+        </div>
+      </div>
+      <div class="wu-side">
+        <div class="mock-tabs" id="mockTabs"></div>
+        <p class="mock-current" id="mockCurrent"></p>
+        <div class="tex-wrap">
+          <p class="tex-tip">真迹直贴 · 公版图版（Owen Jones《Examples of Chinese Ornament》1867，公有领域，经维基共享资源获取）</p>
+          <div class="tex-strip" id="texStrip"></div>
+          <p class="tex-hint">← 横向滑动可浏览全部 <span id="texCount">115</span> 幅公版图版；点任一幅即"原样贴"到器物上 →</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 二级 · 愿·纹签 ============ -->
+<section class="page" data-page="yuan">
+  <div class="section section-page">
+    <div class="journey-host" data-journey-host="yuan"></div>
+    <div class="section-head">
+      <span class="section-num">肆</span>
+      <h2>愿 · 纹签</h2>
+      <p class="section-en">写下心愿，算法为你织一张祈福纹</p>
+    </div>
+    <div class="wish-wrap">
+      <div class="wish-input-col">
+        <p class="wish-tip">在下方写下你的心愿（四个字以上，如"平安顺遂""金榜题名"），祈福纹以「满铺平接」织就，还可一键交予 AI 图生图二次创作</p>
+        <div class="wish-form">
+          <input type="text" id="wishInput" maxlength="20" placeholder="写下一个心愿……">
+          <button class="btn btn-primary" id="wishBtn">生成专属祈福纹</button>
+        </div>
+        <div class="demo-wishes" id="demoWishes"><span class="demo-wishes-label">示例心愿：</span></div>
+        <p class="demo-wishes-tip">点任一示例心愿，可在未配置 API Key 时直接看到预生成的 AI 签文示例（标注「示例结果 · 预生成」）；输入其它心愿则回退为本地规则签文。</p>
+        <!-- 空态占位签卡：第一张签落下之前，左栏不再是一片空白 -->
+        <div class="qian-placeholder" id="qianPlaceholder" aria-hidden="true">
+          <span class="ph-seal" data-i18n-skip>签</span>
+          <p class="ph-line">签文会落在这张签卡上</p>
+          <p class="ph-sub">写下心愿 → 生成祈福纹 → 大模型为你解签</p>
+        </div>
+        <div class="qian-card hidden" id="qianCard">
+          <div class="qian-head">
+            <span id="qianIndex">第 一 签</span>
+            <span id="qianGrade">上上</span>
+          </div>
+          <p class="qian-title" id="qianTitle"></p>
+          <p class="qian-line" id="qianLine"></p>
+          <p class="qian-jie" id="qianJie"></p>
+          <p class="qian-src" id="qianSource"></p>
+          <div class="wish-ai-row">
+            <button class="btn btn-outline" id="wishAiBtn" disabled>AI 祈福图（图生图）</button>
+          </div>
+          <p class="qian-note">※ 签文由大语言模型（书生·墨砚平台 DeepSeek-V4-Flash-Vision）根据心愿与纹样参数个性化生成，人机协同创作；模型不可用时自动降级为本地规则签文。祈福纹骨架为「满铺平接」，点击「AI 祈福图」可将本幅祈福纹交由所接入的图像模型（默认 Agnes Image 2.5 Flash）图生图二次创作。相关 AI 使用情况已在《作品 AI 工具使用情况说明》中如实披露。</p>
+        </div>
+        <div class="ai-result hidden" id="wishAiResult">
+          <div class="ai-result-head">
+            <span id="wishAiTag">AI 祈福图生成中…</span>
+          </div>
+          <img id="wishAiImg" alt="AI 祈福图结果">
+          <div class="ai-result-actions">
+            <a class="btn btn-outline" id="wishAiOpen" target="_blank" rel="noopener" style="display:none">查看原图</a>
+          </div>
+          <p class="ai-result-note">※ 祈福图为 AI 二创：以左侧「真迹 × 算法 · 满铺平接」的祈福纹为参考图，由所接入的图像模型（默认 Agnes Image 2.5 Flash）图生图，保留真迹纹样与配色并补足祥瑞意境；构图与本幅纹样 100% 程序生成。相关 AI 使用已在《AI 工具使用情况说明》中如实披露。</p>
+        </div>
+        <details class="llm-setup">
+          <summary>模型接入设置（大语言模型 + 图像 / 视频模型）</summary>
+          <div class="llm-setup-body">
+            <!-- 接入方式切换：magpie 零配置 / 自定义任意 OpenAI 兼容接口 -->
+            <p class="llm-key-label">① 选择接入方式</p>
+            <div class="llm-provider-seg" role="group" aria-label="大语言模型接入方式">
+              <button type="button" class="llm-prov-btn" data-llm-provider="magpie" aria-pressed="false">
+                <b>magpie 本机网关</b>
+                <span>零配置 · 自动列出本机全部模型</span>
+              </button>
+              <button type="button" class="llm-prov-btn" data-llm-provider="custom" aria-pressed="false">
+                <b>自定义接口</b>
+                <span>自填 URL / 模型名 / Key，接任意服务</span>
+              </button>
+            </div>
+            <p class="llm-provider-status" id="llmProviderStatus" role="status" aria-live="polite"></p>
+
+            <!-- ---- magpie 面板 ---- -->
+            <div class="llm-pane hidden" id="llmPaneMagpie">
+              <p class="llm-key-label">② 选择模型（从本机 magpie 动态拉取）</p>
+              <div class="llm-setup-row">
+                <select id="llmMagpieModel" aria-label="magpie 模型列表"></select>
+                <button class="btn btn-outline" id="llmMagpieRefresh" title="重新拉取模型列表">刷新</button>
+              </div>
+              <!-- 长段落里嵌了 <code>，文本节点被拆碎，逐节点查词典必漏；
+                   故标 data-i18n-html，由 i18n.js 整段 innerHTML 替换 -->
+              <p class="llm-setup-note" data-i18n-html>
+                模型清单来自本机 magpie 网关（<code>/v1/models</code>），包含你所有已登录订阅里的模型。
+                请求经作品自带的本地代理转发——magpie 网关不提供跨域头，浏览器无法直连，
+                所以这一步由 <code>_serve.py</code> 代发（仅允许本机环回地址，并校验 magpie 身份）。
+                用「启动作品.bat」打开本作品即自动具备该代理。
+              </p>
+              <p class="llm-setup-note" id="llmMagpieHint"></p>
+            </div>
+
+            <!-- ---- 自定义接口面板 ---- -->
+            <div class="llm-pane hidden" id="llmPaneCustom">
+              <p class="llm-key-label">② 接口地址（Base URL，OpenAI 兼容）</p>
+              <input type="text" id="llmCustomBase" placeholder="如 https://api.example.com/v1" autocomplete="off">
+              <p class="llm-key-label">③ 模型名</p>
+              <input type="text" id="llmCustomModel" placeholder="如 gpt-4o-mini / deepseek-chat / qwen-plus" autocomplete="off">
+              <p class="llm-key-label">④ API Key</p>
+              <input type="password" id="llmCustomKey" placeholder="粘贴你的 API Key（sk-…）" autocomplete="off">
+              <div class="llm-setup-row">
+                <button class="btn btn-outline" id="llmCustomSave">保存</button>
+                <button class="btn btn-ghost" id="llmCustomClear">清除</button>
+                <button class="btn btn-ghost" id="llmCustomTest" title="发一条最小请求验证配置是否可用">测试连接</button>
+              </div>
+              <p class="llm-setup-note">
+                任何讲 OpenAI 协议的接口都能接：官方 API、第三方中转、自建 vLLM / Ollama 等。
+                地址填到域名即可（<code>https://api.example.com</code>），也可带上 <code>/v1</code>。
+                出于安全，只允许公网 http/https 地址——本机与内网地址会被拒绝；
+                请求同样经本地代理转发，浏览器不直连上游。
+              </p>
+            </div>
+
+            <!-- ---- 图像 / 视频模型（自定义接口，与大语言模型同一套接入规则） ---- -->
+            <p class="llm-key-label llm-key-label-sep">图像 / 视频模型接入 —— AI 实物渲染 / 祈福图 / 全视角视频</p>
+            <p class="llm-key-label">平台地址（Base URL）</p>
+            <input type="text" id="mediaBase" placeholder="如 https://api.agnes-ai.cn" autocomplete="off">
+            <p class="llm-key-label">图像模型名</p>
+            <input type="text" id="mediaImageModel" placeholder="如 agnes-image-2.5-flash" autocomplete="off">
+            <p class="llm-key-label">视频模型名</p>
+            <input type="text" id="mediaVideoModel" placeholder="如 agnes-video-2.5-flash" autocomplete="off">
+            <p class="llm-key-label">API Key</p>
+            <input type="password" id="mediaKey" placeholder="粘贴你的 API Key（sk-…）" autocomplete="off">
+            <div class="llm-setup-row">
+              <button class="btn btn-outline" id="mediaSave">保存</button>
+              <button class="btn btn-ghost" id="mediaClear">清除</button>
+              <button class="btn btn-ghost" id="mediaTest" title="检查平台地址是否可达（经本地代理转发）">测试连接</button>
+              <span id="agnesStatus" class="llm-status"></span>
+            </div>
+            <p class="llm-setup-note">
+              任何提供图像 / 视频接口的平台都能接入——平台地址、两个模型名与 Key 填好保存后，
+              AI 实物渲染、祈福图与全视角视频立即改用该平台；面板默认带入作品已接入验证的
+              Agnes 平台（api.agnes-ai.cn · Image / Video 2.5 Flash），改填即换。
+              出于安全，只允许公网 http/https 地址——本机与内网地址会被拒绝；
+              请求经本地代理转发，浏览器不直连上游，Key 仅保存在本机浏览器（localStorage）。
+            </p>
+          </div>
+        </details>
+      </div>
+      <div class="wish-canvas-col">
+        <canvas id="wishCanvas" width="760" height="760" role="img"
+                aria-label="祈福纹预览：按心愿生成的满铺平接纹样"></canvas>
+        <p class="wish-caption" id="wishCaption"></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 三级 · 我的纹样册 ============ -->
+<section class="page" data-page="album">
+  <div class="section section-page section-alt">
+    <div class="crumb"><button class="btn-ghost-mini" id="albumBack">← 返回工坊</button></div>
+    <div class="journey-host" data-journey-host="album"></div>
+    <div class="section-head">
+      <span class="section-num">册</span>
+      <h2>我的纹样册</h2>
+      <p class="section-en">收藏的每一幅，都是你的独家纹样</p>
+    </div>
+    <p class="jian-tip">在工坊生成后点"收藏此纹样"，即可在此回看、恢复或删除。集藏六大谱系、点亮全部徽章，成就你的专属纹样图鉴。</p>
+    <div class="album-progress" id="albumProgress" role="region" aria-label="图鉴集藏进度与成就"></div>
+    <div class="album-grid" id="albumList"></div>
+    <p class="album-empty" id="albumEmpty">还没有收藏。去工坊生成一幅，点"收藏此纹样"。</p>
+  </div>
+</section>
+
+<!-- ============ 二级 · 序/关于 ============ -->
+<section class="page" data-page="about">
+  <div class="section section-page">
+    <div class="journey-host" data-journey-host="about"></div>
+    <div class="section-head">
+      <span class="section-num">伍</span>
+      <h2>序 · 纹语</h2>
+      <p class="section-en">纹样，是一部无字的史书</p>
+    </div>
+    <div class="xu-body">
+      <p class="xu-lead">从仰韶彩陶上的一尾游鱼，到商周青铜上的雷纹回旋；从盛唐宝相花的雍容圆满，到明清织锦里的蝠蝶绵延——中国传统纹样遵循着对称、重复、连续的构成法则，本质上是一套流传千年的<strong>"生成算法"</strong>。</p>
+      <div class="xu-timeline" id="xuTimeline" role="list" aria-label="纹样五千年时间轴"></div>
+      <div class="xu-era hidden" id="xuEra" aria-live="polite">
+        <div class="xu-era-head">
+          <h3 id="xuEraTitle"></h3>
+          <button class="btn btn-ghost" id="xuEraGo">去看看相关真迹 →</button>
+        </div>
+        <p class="xu-era-body" id="xuEraBody"></p>
+        <p class="xu-era-src" id="xuEraSrc"></p>
+      </div>
+      <p class="xu-note">本作品以"真迹 × 算法"复活这些构成法则：真迹图版取自公有领域典籍，你选择真迹、骨架与配色，算法便把它重新织成一张独一无二的纹样——<em>千人千纹，纹纹不同</em>。</p>
+    </div>
+
+    <div class="about-blocks">
+      <div class="about-block">
+        <h3>创作理念</h3>
+        <p>真迹提供血肉，算法提供骨骼。纹库以 1867 年 Owen Jones《Examples of Chinese Ornament》公版彩色图版为主体（南肯辛顿博物馆藏品纹样，99 幅），另收大都会艺术博物馆等馆藏开放获取织绣纹样 16 幅，共 115 幅，按六大谱系重新考据整理；生成引擎把真迹"圆窗化"，再按二方连续、四方连续、适合纹样、散点平铺、缠枝连续、锦地开光、藻井同心、云肩垂幔、菱格锦网、层带界格、满铺平接十一种传统构成法则重新织排——进可考据，出可创作，还可把构成法则听成旋律（听·纹律）。</p>
+      </div>
+      <div class="about-block">
+        <h3>人机协同</h3>
+        <p>织排构图、器物效果图、配色、动效 100% 程序实现；大语言模型（书生 DeepSeek-V4-Flash-Vision）担任"解签人"；图像模型（Agnes Image 2.5 Flash）担任"实物渲染师"；视频模型（Agnes Video 2.5 Flash）生成器物全视角展示。每个 AI 环节均在页内与《AI 工具使用情况说明》中如实披露。</p>
+      </div>
+      <div class="about-block">
+        <h3>素材与授权</h3>
+        <p>真迹图版：Owen Jones《Examples of Chinese Ornament》(1867)，作者卒于 1874 年，属公有领域；经维基共享资源获取并本地化存储，页内与文档均已标注来源。其余页面元素均由团队原创实现。</p>
+      </div>
+      <div class="about-block">
+        <h3>团队</h3>
+        <p>千纹万象创作组（成员与指导教师信息待补全）。本作品备战 2026 第十四届全国大学生数字媒体科技作品及创意竞赛 · 指定命题"民族文化 创新表达"。</p>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- 光箱：放大查看真迹图版 -->
+<div class="lightbox hidden" id="lightbox" role="dialog" aria-modal="true" aria-label="纹样放大查看">
+  <button class="lightbox-close" id="lightboxClose" aria-label="关闭">×</button>
+  <img id="lightboxImg" alt="">
+</div>
+
+<!-- ============ 纹样对比（P1-5）：两幅真迹并排，看谱系 / 器物考 / 寓意 / 同骨架织排差异 ============
+     入口：纹库工具条「⇄ 对比纹样」点选两幅、详情页「对比此纹样」、或从弹层底部的选幅列表直接换 -->
+<div class="cmp-modal hidden" id="cmpModal" role="dialog" aria-modal="true" aria-label="纹样对比">
+  <div class="cmp-panel">
+    <div class="cmp-head">
+      <div>
+        <h2 id="cmpTitle">纹样对比</h2>
+        <p>同一谱系看流变，跨谱系看差异 —— 字段全部来自真迹图版的考据数据</p>
+      </div>
+      <button class="cmp-close" id="cmpClose" aria-label="关闭对比">×</button>
+    </div>
+    <div class="cmp-body" id="cmpBody"><!-- 由 JS 渲染 --></div>
+  </div>
+</div>
+
+<!-- ============ 纹样挑战（P1-6 限时挑战）：60 秒按谱系/寓意/器物找出指定真迹，答对即入册 ============ -->
+<div class="chal-modal hidden" id="chalModal" role="dialog" aria-modal="true" aria-label="纹样限时挑战">
+  <div class="chal-panel">
+    <div class="chal-head">
+      <div>
+        <h2>纹样挑战</h2>
+        <p id="chalSub">三关难度递增 · 识谱 → 辨意 → 通纹 · 答对即自动入册</p>
+      </div>
+      <button class="chal-close" id="chalClose" aria-label="关闭挑战">×</button>
+    </div>
+    <div class="chal-body">
+      <!-- 三关进度条：识谱（初级）→ 辨意（中级）→ 通纹（高级），难度递增 -->
+      <div id="chalLevels" role="group" aria-label="挑战关卡选择"></div>
+      <div class="chal-ask">
+        <h3 id="chalTask">准备开始…</h3>
+        <p class="chal-hint" id="chalHint"></p>
+      </div>
+      <div class="chal-hud" id="chalHud" role="status" aria-live="polite"></div>
+      <div class="chal-grid" id="chalGrid"><!-- 由 JS 渲染 --></div>
+      <p class="chal-tip" id="chalTip"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 纹博士 · 悬浮对话导览 ============
+     一个"边看边问"的纹样讲解员：用户在任何页面都能唤起，
+     问纹样的源流、寓意、构成与配色。所有考据均来自团队知识库（js/knowledge.js）
+     与真迹纹库（js/plates.js），回答下方附「资料依据」可逐条点开——
+     目的是让对话既可亲又可查证，杜绝 AI 凭记忆编造纹样史。 -->
+<div class="guru-fab" id="guruFab" role="button" tabindex="0"
+     aria-label="打开纹博士 · 纹样讲解员" aria-expanded="false" aria-controls="guruPanel"
+     title="问纹博士 · 纹样讲解员">
+  <span class="guru-fab-seal" aria-hidden="true" data-i18n-skip>纹</span>
+  <span class="guru-fab-label">问纹博士</span>
+  <span class="guru-fab-speaking" id="guruFabSpeaking" aria-hidden="true"><i></i><i></i><i></i></span>
+</div>
+
+<aside class="guru-panel hidden" id="guruPanel" role="dialog" aria-modal="false"
+       aria-label="纹博士 · 纹样讲解员">
+  <header class="guru-head" id="guruHead" title="拖动可移动窗口 · 双击回到右下角">
+    <span class="guru-seal" aria-hidden="true" data-i18n-skip>纹</span>
+    <div class="guru-id">
+      <b>纹博士</b>
+      <span id="guruSub">传统纹样讲解员 · 有据可查</span>
+    </div>
+    <div class="guru-head-actions">
+      <button class="guru-icon-btn guru-rate-btn" id="guruRateToggle" title="朗读语速，点击切换（对下一句生效）" aria-label="朗读语速切换">1.0×</button>
+      <button class="guru-icon-btn guru-speak-toggle" id="guruSpeakToggle" title="自动朗读回答（浏览器本地语音，非云端 AI）" aria-label="自动朗读回答" aria-pressed="false">🔈</button>
+      <button class="guru-icon-btn" id="guruReset" title="恢复到右下角默认大小" aria-label="恢复默认位置与大小">⤢</button>
+      <button class="guru-icon-btn" id="guruClear" title="清空对话" aria-label="清空对话">↺</button>
+      <button class="guru-icon-btn" id="guruClose" title="收起" aria-label="收起对话窗">×</button>
+    </div>
+  </header>
+
+  <div class="guru-log" id="guruLog" role="log" aria-live="polite" aria-relevant="additions text">
+    <!-- 消息由 JS 渲染 -->
+  </div>
+
+  <div class="guru-asks" id="guruAsks" aria-label="快捷提问"></div>
+
+  <form class="guru-form" id="guruForm">
+    <input type="text" id="guruInput" maxlength="200" autocomplete="off"
+           placeholder="问问纹样的源流、寓意、构成…" aria-label="向纹博士提问">
+    <button class="guru-send" id="guruSend" type="submit" aria-label="发送">发送</button>
+  </form>
+  <p class="guru-foot">
+    考据来自团队整理的公版真迹与文献，回答下方标注「资料依据」可溯源。
+    <span id="guruMode">未配置模型 Key 时自动改用本地考据资料作答。</span>
+  </p>
+
+  <!-- 缩放把手：八个方向。拖动任一把手按**等比**缩放整个窗口
+       （字号、间距、圆角都随 zoom 一起缩放，所以是"整体放大缩小"而非只改框）。
+       左右两侧改变宽度、上下两侧改变高度，但比例恒定，形似把窗口"吹大吹小"。 -->
+  <div class="guru-rz guru-rz-r"  data-rz="r"  title="等比缩放"></div>
+  <div class="guru-rz guru-rz-l"  data-rz="l"  title="等比缩放"></div>
+  <div class="guru-rz guru-rz-b"  data-rz="b"  title="等比缩放"></div>
+  <div class="guru-rz guru-rz-t"  data-rz="t"  title="等比缩放"></div>
+  <div class="guru-rz guru-rz-br" data-rz="br" title="等比缩放"></div>
+  <div class="guru-rz guru-rz-bl" data-rz="bl" title="等比缩放"></div>
+  <div class="guru-rz guru-rz-tr" data-rz="tr" title="等比缩放"></div>
+  <div class="guru-rz guru-rz-tl" data-rz="tl" title="等比缩放"></div>
+</aside>
+
+<!-- 全局：收藏快捷入口 + 回到顶部 + 页脚 -->
+<div class="collect-fab" id="collectFab" role="button" tabindex="0" aria-label="我的纹样册" title="我的纹样册">
+  <span>册</span><b id="collectCount">0</b>
+</div>
+
+<footer class="footer">
+  <div class="footer-seal">千纹万象</div>
+  <p class="footer-line">真迹生纹 · 万象更新 —— 古人的纹样，今天的算法</p>
+  <p>中国传统纹样生成式数字体验 · 备战 2026 第十四届全国大学生数字媒体科技作品及创意竞赛</p>
+  <p class="footer-small">赛道：指定命题 · 民族文化 创新表达 ｜ 真迹 × 算法再创作｜ 签文 · 渲染 · 视频由大模型协同（已如实披露）</p>
+  <div class="footer-tags">
+    <span id="footerPlateCount">…幅真迹</span><span>6 大谱系</span><span>11 种骨架</span><span>6 套配色</span><span>矢量导出</span><span>AI 协同</span>
+  </div>
+  <p class="footer-small">© 2026 千纹万象创作组 · 真迹图版：Owen Jones《Examples of Chinese Ornament》(1867) 公有领域（经维基共享资源获取）· 其余页面元素离线运行</p>
+</footer>
+
+<button class="to-top" id="toTopBtn" title="回到顶部">↑</button>
+
+<script src="js/palettes.js?v=20261014n"></script>
+<script src="js/categories.js?v=20261014n"></script>
+<script src="js/plates.js?v=20261014n"></script>
+<script src="js/svg-context.js?v=20261014n"></script>
+<script src="js/engine.js?v=20261014n"></script>
+<script src="js/config.js?v=20261014n"></script>
+<!-- 纹样文化知识库 + 检索增强（纹博士对话的事实底座，纯本地、可溯源） -->
+<script src="js/knowledge.js?v=20261014n"></script>
+<script src="js/guides.js?v=20261014n"></script>
+<!-- 演示缓存：预生成 AI 结果，无 Key / 断网时也能展示人机协同环节（页内明确标注为示例） -->
+<script src="js/demo.js?v=20261014n"></script>
+<script src="js/llm.js?v=20261014n"></script>
+<script src="js/agnes.js?v=20261014n"></script>
+<script src="js/mockups.js?v=20261014n"></script>
+<script src="js/sound.js?v=20261014n"></script>
+<script src="js/collection.js?v=20261014n"></script>
+<script src="js/app.js?v=20261014n"></script>
+<script src="js/sharecard.js?v=20261014n"></script>
+<script src="js/animations.js?v=20261014n"></script>
+<!-- 一幅纹样的旅程（P1-4）：把五大展厅串成一条可走完的线；依赖 showPage，故置于 app.js 之后 -->
+<script src="js/journey.js?v=20261014n"></script>
+<!-- 纹样对比（P1-5）：两幅真迹并排看谱系/器物考/寓意差异；依赖 Plates / Engine / state -->
+<script src="js/compare.js?v=20261014n"></script>
+<!-- 纹样挑战（P1-6）：60 秒按谱系/寓意/器物找真迹，答对即入册；依赖 Plates / Collection -->
+<script src="js/challenge.js?v=20261014n"></script>
+<!-- 纹博士悬浮对话导览：依赖 Guides / LLM / Plates，故置于最后 -->
+<script src="js/guru.js?v=20261014n"></script>
+
+<!-- ============ 中英双语（2026-10-14 新增） ============
+     顺序有讲究：i18n.js 必须是字典文件的**第一个**——各字典都是
+     `(function(){ if (typeof I18n==="undefined") return; I18n.addDict({...}); })()`
+     这样的 IIFE，在 i18n.js 之前加载会被静默跳过（I18n 还是 undefined）。
+     同理它必须排在所有业务脚本之前，因为业务脚本在 DOMContentLoaded 里
+     渲染界面时会调用 I18n.t()；而 I18n.init() 本身也挂在 DOMContentLoaded
+     上，且本文件的 listener 注册早于 app.js（先注册先执行），所以词典一定齐了。 -->
+<script src="js/i18n.js?v=20261014n"></script>
+<script src="js/i18n.dict.plates.js?v=20261014n"></script>
+<script src="js/i18n.dict.journey.js?v=20261014n"></script>
+<script src="js/i18n.dict.challenge.js?v=20261014n"></script>
+<script src="js/i18n.dict.p1.js?v=20261014n"></script>
+<script src="js/i18n.dict.knowledge.js?v=20261014n"></script>
+<script src="js/i18n.dict.ui.js?v=20261014n"></script>
+<script src="js/i18n.dict.misc.js?v=20261014n"></script>
+<script src="js/i18n.dict.late.js?v=20261014n"></script>
+</body>
+</html>
