@@ -701,15 +701,34 @@ input[type="range"] { width: 100%; accent-color: var(--cinnabar); }
   background: var(--card-solid); color: var(--ink); letter-spacing: .5px;
 }
 #llmMagpieModel:focus { border-color: var(--indigo); outline: none; }
-#llmCustomBase, #llmCustomModel, #llmCustomKey, #mediaBase, #mediaImageModel, #mediaVideoModel, #mediaKey {
+#llmCustomBase, #llmCustomModel, #llmCustomKey, #mediaBase, #mediaImageModel, #mediaVideoModel, #mediaKey,
+#mediaImageFallbacks, #mediaVideoFallbacks,
+#mediaProtoImagePath, #mediaProtoImageResult, #mediaProtoCreatePath, #mediaProtoIdField, #mediaProtoPollPath,
+#mediaProtoPollBase, #mediaProtoPollInterval, #mediaProtoStatus, #mediaProtoOk, #mediaProtoFail,
+#mediaProtoProgress, #mediaProtoResult, #mediaProtoAuthHeader, #mediaProtoAuthPrefix {
   width: 100%; font-family: inherit; font-size: 14px;
   padding: 10px 14px; border: 1px solid var(--line); border-radius: 8px;
   background: var(--card-solid); outline: none; letter-spacing: 1px;
   margin-bottom: 4px;
 }
-#llmCustomBase:focus, #llmCustomModel:focus, #llmCustomKey:focus, #mediaBase:focus, #mediaImageModel:focus, #mediaVideoModel:focus, #mediaKey:focus { border-color: var(--indigo); }
+#llmCustomBase:focus, #llmCustomModel:focus, #llmCustomKey:focus, #mediaBase:focus, #mediaImageModel:focus, #mediaVideoModel:focus, #mediaKey:focus,
+#mediaImageFallbacks:focus, #mediaVideoFallbacks:focus,
+#mediaProtoImagePath:focus, #mediaProtoImageResult:focus, #mediaProtoCreatePath:focus, #mediaProtoIdField:focus, #mediaProtoPollPath:focus,
+#mediaProtoPollBase:focus, #mediaProtoPollInterval:focus, #mediaProtoStatus:focus, #mediaProtoOk:focus, #mediaProtoFail:focus,
+#mediaProtoProgress:focus, #mediaProtoResult:focus, #mediaProtoAuthHeader:focus, #mediaProtoAuthPrefix:focus { border-color: var(--indigo); }
 #llmCustomBase::placeholder, #llmCustomModel::placeholder,
 #llmCustomKey::placeholder, #mediaKey::placeholder { color: var(--ink-faint); }
+/* 自定义平台的 JSON 模板与额外请求头：等宽字体、可纵向拉伸、主题跟随面板 */
+#mediaProtoImageBody, #mediaProtoCreateBody, #mediaProtoImageHeaders, #mediaProtoVideoHeaders {
+  width: 100%; font-family: ui-monospace, Consolas, "Courier New", monospace; font-size: 12.5px;
+  line-height: 1.55; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card-solid); color: var(--ink); outline: none; resize: vertical;
+  letter-spacing: 0; margin-bottom: 4px;
+}
+#mediaProtoImageBody:focus, #mediaProtoCreateBody:focus, #mediaProtoImageHeaders:focus, #mediaProtoVideoHeaders:focus { border-color: var(--indigo); }
+#mediaProtoImageBody::placeholder, #mediaProtoCreateBody::placeholder, #mediaProtoImageHeaders::placeholder, #mediaProtoVideoHeaders::placeholder { color: var(--ink-faint); }
+/* 协议详情区：嵌套在媒体设置之内，左侧细线提示层级 */
+#mediaProtoPane { border-left: 2px solid var(--line); padding-left: 12px; }
 /* 旧样式保留兼容：若页面还有 #llmKeyInput（旧版结构）也不至于无样式 */
 #llmKeyInput {
   width: 100%; font-family: inherit; font-size: 14px;
@@ -913,6 +932,15 @@ body[data-hall="dark"] .llm-provider-status.err { color: var(--hall-cinnabar); }
 .collect-empty { font-size: 13px; color: var(--ink-soft); padding: 20px 6px; }
 
 .llm-key-label { font-size: 13px; color: var(--ink-soft); letter-spacing: 1px; margin: 6px 0 6px; }
+
+/* 平台协议下拉：与输入框同宽同底色，视觉上不突兀 */
+.llm-setup-select {
+  width: 100%; padding: 10px 12px; font-size: 14px; font-family: inherit;
+  color: var(--ink); background: var(--paper);
+  border: 1px solid var(--line); border-radius: var(--radius-sm, 8px);
+  cursor: pointer;
+}
+.llm-setup-select:focus { outline: none; border-color: var(--seal, #9e2b22); }
 
 /* ---------- 滚动显现 ---------- */
 .reveal { opacity: 0; transform: translateY(26px); transition: opacity .8s ease, transform .8s cubic-bezier(.2,.7,.2,1); }

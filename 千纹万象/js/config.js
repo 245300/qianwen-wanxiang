@@ -95,27 +95,152 @@ const LLM_CONFIG = {
 };
 
 /* ============ 图像 / 视频模型接入配置 ============
- * 与大语言模型「自定义接口」同一套接入规则（见上方说明）：
+ * 与大语言模型「自定义接口」同一套接入规则：
  *   用户提供 平台地址（Base URL）+ API Key + 图像模型名 + 视频模型名 即可接入。
- * 默认值是项目已长期接入并实测通过的 Agnes 平台（https://api.agnes-ai.cn）
- * 与其 Image/Video 2.5 Flash 两个模型——面板打开时自动带入，
- * 用户可改填任意 OpenAI 兼容的图像/视频平台。
  *
- * 协议约定（沿用 Agnes 已验证的链路，前端 js/agnes.js 负责成形）：
- *   图像：POST {base}/v1/images/generations（支持 dataURI 作为 image 输入做图生图）
- *   视频：POST {base}/v1/videos（异步任务）→ GET {base}/agnesapi?video_id=..&model_name=.. 轮询
+ * 【Provider（协议适配器）设计——对标 Cherry Studio / LobeChat 等主流客户端】
+ * 平台之间的 API 形状并不通用（有的讲 OpenAI 协议、有的是厂商私有协议），
+ * 因此把"怎么发请求"从 Agnes 对象里抽出来，做成一张可扩展的注册表：
+ * 每个 Provider 声明自己的 id / 名称 / 默认平台地址 / 请求成形方式。
+ * 接入新平台（如 Seedance、智谱等）只需在 MEDIA_PROVIDERS 里加一项 +
+ * 在 agnes.js 的 _dispatchImage/_dispatchVideo 里实现其分支，面板下拉自动出现。
  *
- * 安全设计：平台地址与 Key 只存本机 localStorage；请求统一经 `_serve.py` 的
- *   同源代理 /api/media/relay 转发，代理侧做与 LLM 通道相同的 SSRF 校验
- *   （仅公网 http/https，拒绝环回/内网/保留地址），浏览器不直连上游。
+ * 当前内置三个 Provider：
+ *   agnes     —— Agnes（OpenAI 兼容图像/视频：/v1/images/generations、
+ *                /v1/videos、/agnesapi 轮询）
+ *   dashscope —— 阿里云百炼（DashScope 原生：multimodal-generation 同步出图、
+ *                video-synthesis + /api/v1/tasks 轮询）
+ *   custom    —— 自定义平台（通用协议模板：请求路径、请求体与取值字段都是
+ *                面板里的数据，agnes.js 读模板发请求，不写代码即可接入）
+ *
+ * 【备用模型链（quota fallback）】
+ * 免费额度是按模型计的，"用完即停"（403 AllocationQuota.FreeTierOnly）。
+ * 所以为图像/视频各配一条按序尝试的链：主模型额度耗尽时自动换下一个，
+ * 直到链上全部耗尽才真正报错。链可在「模型接入设置」面板查看与修改（逗号分隔）。
  */
+const MEDIA_PROVIDERS = {
+  agnes: {
+    label: "Agnes（OpenAI 兼容图像/视频）",
+    baseUrl: "https://api.agnes-ai.cn",
+    imageModel: "agnes-image-2.5-flash",
+    videoModel: "agnes-video-2.5-flash"
+  },
+  dashscope: {
+    label: "阿里云百炼 Bailian（DashScope）",
+    /* 业务空间专属域名（控制台 API-KEY 页可查；dashscope.aliyuncs.com 也可用，
+       但官方提示 2026-09-30 起进入维护态，新接入建议用专属域名） */
+    baseUrl: "",
+    imageModel: "qwen-image-2.1-pro",
+    videoModel: "wan2.7-i2v"
+  },
+  custom: {
+    label: "自定义平台（通用协议模板）",
+    /* 地址 / 模型 / Key 由用户填；请求形状由面板「协议详情」区的模板描述
+       （见下方 CUSTOM_PROTO_DEFAULTS 与 agnes.js 的 _custom* 实现）。 */
+    baseUrl: "",
+    imageModel: "",
+    videoModel: ""
+  }
+};
+
+/* ---------- 自定义平台：通用协议模板（面板「协议详情」区编辑，JSON 存 localStorage） ----------
+ * 目标：不写代码也能接入任意 HTTP API 形态的图像/视频平台——把"请求怎么发、
+ * 结果怎么取"变成界面上的数据。请求仍经本地代理转发，代理侧照旧做 SSRF 校验；
+ * 认证头与额外请求头也由代理按白名单校验后附加（见 _serve.py）。
+ *
+ * 模板语法（图像 body / 视频 createBody 用）：
+ *   · JSON 文本；占位符 {model} {prompt} {image} {seconds} {taskId}
+ *   · 字符串恰为占位符 → 整体替换；占位符嵌在字符串里 → 字符串插值。
+ *     替换结果一律是**字符串**（实测：Agnes 只认字符串型 seconds，百炼两种都收）；
+ *     平台上若必须给数字，在模板里写死字面量即可（"duration": 6）。
+ * 取值一律用「字段名」而非路径：agnes.js 的 _find 会递归查找该名字的字段，
+ * 换平台通常只需改字段名。字段名留空 = 自动（顺序见 agnes.js 的 _custom* 注释）。
+ *
+ * 预置模板：值 = 对默认值的覆盖（over），套用后仍可在面板里逐项修改。
+ * 只收「已实测」的形状；Ark/Seedance、可灵等配方见 docs/交接摘要.md，
+ * 拿到 Key 实测通过后再收编进这里（新增预置只是加数据）。 */
+const CUSTOM_PROTO_DEFAULTS = {
+  image: {
+    path: "/v1/images/generations",
+    body: '{\n  "model": "{model}",\n  "prompt": "{prompt}",\n  "image": "{image}",\n  "size": "1024x1024"\n}',
+    resultField: "",
+    /* 图像接口的额外请求头（JSON 对象字符串；一般留空——有些平台的两个
+       接口需要不同的头，所以图像/视频各有一组，见 video.headers 注释）。 */
+    headers: ""
+  },
+  video: {
+    createPath: "/v1/videos",
+    createBody: '{\n  "model": "{model}",\n  "prompt": "{prompt}",\n  "images": ["{image}"],\n  "seconds": "{seconds}"\n}',
+    idField: "",
+    pollPath: "/v1/videos/{taskId}",
+    pollBase: "",
+    pollIntervalMs: 3000,
+    statusField: "status",
+    okValues: "succeeded,success,completed,done",
+    failValues: "failed,error,canceled,cancelled",
+    progressField: "progress",
+    resultField: "",
+    /* 视频**创建**请求的额外请求头（轮询不带——头的语义属于"这次提交按
+       异步受理"，且实测把它挂到轮询 GET 上会被百炼 403 拒绝）。 */
+    headers: ""
+  },
+  auth: { header: "Authorization", prefix: "Bearer " }
+};
+
+const CUSTOM_PROTO_PRESETS = {
+  generic: { label: "通用：图像同步 + 视频异步任务", over: {} },
+  agnes: {
+    label: "Agnes 同形（OpenAI 兼容）",
+    over: {
+      video: {
+        createBody: '{\n  "model": "{model}",\n  "prompt": "{prompt}",\n  "images": ["{image}"],\n  "seconds": "{seconds}",\n  "mode": "reference",\n  "size": "720P",\n  "aspect_ratio": "1:1"\n}',
+        pollPath: "/agnesapi?video_id={taskId}&model_name={model}"
+      }
+    }
+  },
+  dashscope: {
+    label: "百炼 DashScope 同形（wan2.7 系）",
+    over: {
+      image: {
+        path: "/api/v1/services/aigc/multimodal-generation/generation",
+        body: '{\n  "model": "{model}",\n  "input": {\n    "messages": [{\n      "role": "user",\n      "content": [{ "text": "{prompt}" }, { "image": "{image}" }]\n    }]\n  },\n  "parameters": { "size": "1024*1024" }\n}',
+        resultField: "image"
+      },
+      video: {
+        createPath: "/api/v1/services/aigc/video-generation/video-synthesis",
+        createBody: '{\n  "model": "{model}",\n  "input": {\n    "prompt": "{prompt}",\n    "media": [{ "url": "{image}", "type": "first_frame" }]\n  },\n  "parameters": { "resolution": "720P", "duration": "{seconds}" }\n}',
+        idField: "task_id",
+        pollPath: "/api/v1/tasks/{taskId}",
+        statusField: "task_status",
+        okValues: "succeeded",
+        failValues: "failed,canceled,cancelled",
+        resultField: "video_url",
+        headers: '{\n  "X-DashScope-Async": "enable"\n}'
+      }
+    }
+  }
+};
+
 const AGNES_CONFIG = {
   enabled: true,
 
-  /* 默认接入平台与两个模型（= 已接入的 Agnes） */
-  baseUrl: "https://api.agnes-ai.cn",
-  imageModel: "agnes-image-2.5-flash",
-  videoModel: "agnes-video-2.5-flash",
+  /* ---- 默认 Provider 与主模型（= 面板打开时带入的初始值） ----
+   * 默认选百炼：图像走 qwen-image-2.1-pro（额度 10 张，较新、质量稳），
+   * 视频走 wan2.7-i2v（额度 50 次）。平台地址需用户填业务空间专属域名。 */
+  provider: "dashscope",
+  baseUrl: "",
+  imageModel: "qwen-image-2.1-pro",
+  videoModel: "wan2.7-i2v",
+
+  /* ---- 备用模型链：主模型 403 额度耗尽时按序降级 ----
+   * 顺序即优先级；同一平台内生效（跨平台不自动跳，避免用户误以为还用着原平台）。
+   * 依据 2026-10-15 实测量（含当日联调消耗后余额）：
+   *   qwen-image-2.1-pro 剩 7 → qwen-image-2.0 剩 95 → qwen-image-2.1-turbo 剩 10；
+   *   wan2.7-i2v 剩 35 → wan2.6-i2v 剩 45 → wanx2.1-i2v-turbo 剩 195。
+   * 注：百炼视频两代参数形状不同（wan2.7+/wan3.0 用 media 数组，更早用 img_url），
+   *     已在 agnes.js 的 _dashscopeCreateVideo 按模型名自动分派，备用链可跨代混填。 */
+  imageFallbacks: ["qwen-image-2.0", "qwen-image-2.1-turbo"],
+  videoFallbacks: ["wan2.6-i2v", "wanx2.1-i2v-turbo"],
 
   timeoutMs: 120000,
 
@@ -140,9 +265,14 @@ const AGNES_CONFIG = {
   checkPath: "/api/media/check",
 
   /* 持久化键：Key 沿用旧键名，老用户已存的 Agnes Key 继续有效；
-     baseUrl / 两个模型名是本次新增的用户可配置项 */
+     provider / baseUrl / 两个模型名 / 备用链是用户可配置项 */
   keyStorageKey: "agnes_api_key",
+  providerStorageKey: "qianwen_media_provider",
   baseStorageKey: "qianwen_media_base",
   imageModelStorageKey: "qianwen_media_image_model",
-  videoModelStorageKey: "qianwen_media_video_model"
+  videoModelStorageKey: "qianwen_media_video_model",
+  imageFallbacksStorageKey: "qianwen_media_image_fallbacks",
+  videoFallbacksStorageKey: "qianwen_media_video_fallbacks",
+  /* 自定义平台的协议描述（CUSTOM_PROTO_DEFAULTS 结构的 JSON 字符串） */
+  protoStorageKey: "qianwen_media_custom_proto"
 };

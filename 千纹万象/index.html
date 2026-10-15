@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>千纹万象——中国传统纹样生成式数字体验</title>
 <link rel="preload" href="assets/fonts/qw-serif-bold.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="css/style.css?v=20261014n">
+<link rel="stylesheet" href="css/style.css?v=20261015h">
 </head>
 <body>
 <!-- 主题早应用（防首帧闪烁）：素 su / 宣纸 xuan / 墨夜 mo，与 app.js 的 applyTheme 同一套存储键 -->
@@ -389,12 +389,22 @@
 
             <!-- ---- 图像 / 视频模型（自定义接口，与大语言模型同一套接入规则） ---- -->
             <p class="llm-key-label llm-key-label-sep">图像 / 视频模型接入 —— AI 实物渲染 / 祈福图 / 全视角视频</p>
+            <p class="llm-key-label">平台（协议）</p>
+            <select id="mediaDialect" class="llm-setup-select">
+              <option value="agnes">Agnes（OpenAI 兼容图像/视频）</option>
+              <option value="dashscope">阿里云百炼 Bailian（DashScope）</option>
+              <option value="custom">自定义平台（通用协议模板）</option>
+            </select>
             <p class="llm-key-label">平台地址（Base URL）</p>
             <input type="text" id="mediaBase" placeholder="如 https://api.agnes-ai.cn" autocomplete="off">
             <p class="llm-key-label">图像模型名</p>
             <input type="text" id="mediaImageModel" placeholder="如 agnes-image-2.5-flash" autocomplete="off">
+            <p class="llm-key-label">图像备用链（可选，逗号分隔，额度耗尽时按序切换）</p>
+            <input type="text" id="mediaImageFallbacks" placeholder="如 qwen-image-2.0, wan2.7-image" autocomplete="off">
             <p class="llm-key-label">视频模型名</p>
             <input type="text" id="mediaVideoModel" placeholder="如 agnes-video-2.5-flash" autocomplete="off">
+            <p class="llm-key-label">视频备用链（可选，逗号分隔，额度耗尽时按序切换）</p>
+            <input type="text" id="mediaVideoFallbacks" placeholder="如 wan2.6-i2v, wanx2.1-i2v-turbo" autocomplete="off">
             <p class="llm-key-label">API Key</p>
             <input type="password" id="mediaKey" placeholder="粘贴你的 API Key（sk-…）" autocomplete="off">
             <div class="llm-setup-row">
@@ -403,10 +413,72 @@
               <button class="btn btn-ghost" id="mediaTest" title="检查平台地址是否可达（经本地代理转发）">测试连接</button>
               <span id="agnesStatus" class="llm-status"></span>
             </div>
+
+            <!-- ---- 自定义平台的协议详情：仅"平台 = 自定义平台"时显示（app.js applyMediaProvider 切换） ---- -->
+            <div class="llm-pane hidden" id="mediaProtoPane">
+              <p class="llm-key-label">协议模板（套用后仍可逐项修改）</p>
+              <select id="mediaProtoPreset" class="llm-setup-select">
+                <option value="generic">通用：图像同步 + 视频异步任务</option>
+                <option value="agnes">Agnes 同形（OpenAI 兼容）</option>
+                <option value="dashscope">百炼 DashScope 同形（wan2.7 系）</option>
+              </select>
+
+              <p class="llm-key-label llm-key-label-sep">图像接口（同步返回）</p>
+              <p class="llm-key-label">请求路径</p>
+              <input type="text" id="mediaProtoImagePath" placeholder="如 /v1/images/generations" autocomplete="off">
+              <p class="llm-key-label">请求体模板（JSON，{model} {prompt} {image} 会被替换）</p>
+              <textarea id="mediaProtoImageBody" rows="5" spellcheck="false" placeholder='如 {"model": "{model}", "prompt": "{prompt}", "image": "{image}"}'></textarea>
+              <p class="llm-key-label">结果字段名（留空 = 自动找 url / b64_json）</p>
+              <input type="text" id="mediaProtoImageResult" placeholder="普通平台留空即可，特殊平台再指定" autocomplete="off">
+              <p class="llm-key-label">图像接口的额外请求头（JSON 对象，一般留空）</p>
+              <textarea id="mediaProtoImageHeaders" rows="2" spellcheck="false"></textarea>
+
+              <p class="llm-key-label llm-key-label-sep">视频接口（创建任务 + 轮询取片）</p>
+              <p class="llm-key-label">创建路径</p>
+              <input type="text" id="mediaProtoCreatePath" placeholder="如 /v1/videos" autocomplete="off">
+              <p class="llm-key-label">创建请求体模板（JSON，另支持 {seconds}）</p>
+              <textarea id="mediaProtoCreateBody" rows="6" spellcheck="false"></textarea>
+              <p class="llm-key-label">任务号字段名（留空 = 自动找 task_id / video_id / id）</p>
+              <input type="text" id="mediaProtoIdField" placeholder="普通平台留空即可" autocomplete="off">
+              <p class="llm-key-label">轮询路径（{taskId} 与 {model} 会被替换）</p>
+              <input type="text" id="mediaProtoPollPath" placeholder="如 /v1/videos/{taskId}" autocomplete="off">
+              <p class="llm-key-label">轮询地址（留空 = 与平台地址相同）</p>
+              <input type="text" id="mediaProtoPollBase" placeholder="任务查询在另一个域名时才填" autocomplete="off">
+              <p class="llm-key-label">轮询间隔（毫秒）</p>
+              <input type="text" id="mediaProtoPollInterval" placeholder="3000" autocomplete="off">
+              <p class="llm-key-label">状态字段名</p>
+              <input type="text" id="mediaProtoStatus" placeholder="status" autocomplete="off">
+              <p class="llm-key-label">成功状态值（逗号分隔，小写比较）</p>
+              <input type="text" id="mediaProtoOk" placeholder="succeeded, success, completed, done" autocomplete="off">
+              <p class="llm-key-label">失败状态值（逗号分隔）</p>
+              <input type="text" id="mediaProtoFail" placeholder="failed, error, canceled, cancelled" autocomplete="off">
+              <p class="llm-key-label">进度字段名（留空 = 不显示进度）</p>
+              <input type="text" id="mediaProtoProgress" placeholder="progress" autocomplete="off">
+              <p class="llm-key-label">结果地址字段名（留空 = 自动找 video_url / url）</p>
+              <input type="text" id="mediaProtoResult" placeholder="普通平台留空即可" autocomplete="off">
+              <p class="llm-key-label">视频接口的额外请求头（JSON 对象，只加在创建请求上）</p>
+              <textarea id="mediaProtoVideoHeaders" rows="2" spellcheck="false" placeholder='如 {"X-DashScope-Async": "enable"}'></textarea>
+
+              <p class="llm-key-label llm-key-label-sep">认证</p>
+              <p class="llm-key-label">认证头名</p>
+              <input type="text" id="mediaProtoAuthHeader" placeholder="Authorization" autocomplete="off">
+              <p class="llm-key-label">认证前缀（留空 = 裸 Key，如 x-api-key 平台）</p>
+              <input type="text" id="mediaProtoAuthPrefix" placeholder="Bearer （含末尾空格）" autocomplete="off">
+
+              <p class="llm-setup-note">
+                选一个协议模板会自动填好上面各项，照平台文档改到能用即可，全程无需改代码。
+                占位符 {model} {prompt} {image} {seconds} {taskId} 会替换成实际值（一律为字符串）；取值一律填「字段名」而非路径，留空 = 自动。
+                图像为同步接口（一次返回结果），视频为「创建任务 → 按间隔轮询 → 取结果地址」。
+                认证头与额外请求头由本地代理按白名单校验后附加，平台地址仍只允许公网 http/https。
+              </p>
+            </div>
             <p class="llm-setup-note">
-              任何提供图像 / 视频接口的平台都能接入——平台地址、两个模型名与 Key 填好保存后，
-              AI 实物渲染、祈福图与全视角视频立即改用该平台；面板默认带入作品已接入验证的
-              Agnes 平台（api.agnes-ai.cn · Image / Video 2.5 Flash），改填即换。
+              按「平台」选择协议后填地址、两个模型名与 Key 即可接入。Agnes 走 OpenAI 兼容
+              图像/视频接口；阿里云百炼走 DashScope 原生接口——地址填业务空间专属域名
+              （形如 https://ws-xxxx.cn-beijing.maas.aliyuncs.com，控制台「API-KEY」页可查），
+              图像模型如 qwen-image-2.1-pro，视频模型如 wan2.7-i2v。
+              备用链用于额度耗尽时自动换模型：百炼免费额度按模型计、用完即停
+              （403 FreeTierOnly），主模型耗尽后会沿备用链按序尝试，直到链上全部耗尽才报错。
               出于安全，只允许公网 http/https 地址——本机与内网地址会被拒绝；
               请求经本地代理转发，浏览器不直连上游，Key 仅保存在本机浏览器（localStorage）。
             </p>
@@ -606,33 +678,33 @@
 
 <button class="to-top" id="toTopBtn" title="回到顶部">↑</button>
 
-<script src="js/palettes.js?v=20261014n"></script>
-<script src="js/categories.js?v=20261014n"></script>
-<script src="js/plates.js?v=20261014n"></script>
-<script src="js/svg-context.js?v=20261014n"></script>
-<script src="js/engine.js?v=20261014n"></script>
-<script src="js/config.js?v=20261014n"></script>
+<script src="js/palettes.js?v=20261015h"></script>
+<script src="js/categories.js?v=20261015h"></script>
+<script src="js/plates.js?v=20261015h"></script>
+<script src="js/svg-context.js?v=20261015h"></script>
+<script src="js/engine.js?v=20261015h"></script>
+<script src="js/config.js?v=20261015h"></script>
 <!-- 纹样文化知识库 + 检索增强（纹博士对话的事实底座，纯本地、可溯源） -->
-<script src="js/knowledge.js?v=20261014n"></script>
-<script src="js/guides.js?v=20261014n"></script>
+<script src="js/knowledge.js?v=20261015h"></script>
+<script src="js/guides.js?v=20261015h"></script>
 <!-- 演示缓存：预生成 AI 结果，无 Key / 断网时也能展示人机协同环节（页内明确标注为示例） -->
-<script src="js/demo.js?v=20261014n"></script>
-<script src="js/llm.js?v=20261014n"></script>
-<script src="js/agnes.js?v=20261014n"></script>
-<script src="js/mockups.js?v=20261014n"></script>
-<script src="js/sound.js?v=20261014n"></script>
-<script src="js/collection.js?v=20261014n"></script>
-<script src="js/app.js?v=20261014n"></script>
-<script src="js/sharecard.js?v=20261014n"></script>
-<script src="js/animations.js?v=20261014n"></script>
+<script src="js/demo.js?v=20261015h"></script>
+<script src="js/llm.js?v=20261015h"></script>
+<script src="js/agnes.js?v=20261015h"></script>
+<script src="js/mockups.js?v=20261015h"></script>
+<script src="js/sound.js?v=20261015h"></script>
+<script src="js/collection.js?v=20261015h"></script>
+<script src="js/app.js?v=20261015h"></script>
+<script src="js/sharecard.js?v=20261015h"></script>
+<script src="js/animations.js?v=20261015h"></script>
 <!-- 一幅纹样的旅程（P1-4）：把五大展厅串成一条可走完的线；依赖 showPage，故置于 app.js 之后 -->
-<script src="js/journey.js?v=20261014n"></script>
+<script src="js/journey.js?v=20261015h"></script>
 <!-- 纹样对比（P1-5）：两幅真迹并排看谱系/器物考/寓意差异；依赖 Plates / Engine / state -->
-<script src="js/compare.js?v=20261014n"></script>
+<script src="js/compare.js?v=20261015h"></script>
 <!-- 纹样挑战（P1-6）：60 秒按谱系/寓意/器物找真迹，答对即入册；依赖 Plates / Collection -->
-<script src="js/challenge.js?v=20261014n"></script>
+<script src="js/challenge.js?v=20261015h"></script>
 <!-- 纹博士悬浮对话导览：依赖 Guides / LLM / Plates，故置于最后 -->
-<script src="js/guru.js?v=20261014n"></script>
+<script src="js/guru.js?v=20261015h"></script>
 
 <!-- ============ 中英双语（2026-10-14 新增） ============
      顺序有讲究：i18n.js 必须是字典文件的**第一个**——各字典都是
@@ -641,14 +713,14 @@
      同理它必须排在所有业务脚本之前，因为业务脚本在 DOMContentLoaded 里
      渲染界面时会调用 I18n.t()；而 I18n.init() 本身也挂在 DOMContentLoaded
      上，且本文件的 listener 注册早于 app.js（先注册先执行），所以词典一定齐了。 -->
-<script src="js/i18n.js?v=20261014n"></script>
-<script src="js/i18n.dict.plates.js?v=20261014n"></script>
-<script src="js/i18n.dict.journey.js?v=20261014n"></script>
-<script src="js/i18n.dict.challenge.js?v=20261014n"></script>
-<script src="js/i18n.dict.p1.js?v=20261014n"></script>
-<script src="js/i18n.dict.knowledge.js?v=20261014n"></script>
-<script src="js/i18n.dict.ui.js?v=20261014n"></script>
-<script src="js/i18n.dict.misc.js?v=20261014n"></script>
-<script src="js/i18n.dict.late.js?v=20261014n"></script>
+<script src="js/i18n.js?v=20261015h"></script>
+<script src="js/i18n.dict.plates.js?v=20261015h"></script>
+<script src="js/i18n.dict.journey.js?v=20261015h"></script>
+<script src="js/i18n.dict.challenge.js?v=20261015h"></script>
+<script src="js/i18n.dict.p1.js?v=20261015h"></script>
+<script src="js/i18n.dict.knowledge.js?v=20261015h"></script>
+<script src="js/i18n.dict.ui.js?v=20261015h"></script>
+<script src="js/i18n.dict.misc.js?v=20261015h"></script>
+<script src="js/i18n.dict.late.js?v=20261015h"></script>
 </body>
 </html>

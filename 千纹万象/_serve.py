@@ -8,12 +8,13 @@ Two jobs
    script references) after the site is updated. serve.ps1 prefers this wrapper
    and falls back to plain http.server when the file is missing.
 
-2. Proxy model requests to upstream gateways (two relays):
+2. Proxy model requests to upstream gateways (three relays):
    * ``/api/llm/chat``      — LLM chat (magpie gateway or a custom
      OpenAI-compatible endpoint, SSE streaming).
-   * ``/api/media/relay``   — image / video generation (the project's
-     connected image/video platform, e.g. Agnes: ``/v1/images/generations``,
-     ``/v1/videos``, ``/agnesapi`` status polling).
+   * ``/api/media/relay``   — image / video generation. Two upstream
+     dialects: the project's original Agnes platform (``/v1/images/generations``,
+     ``/v1/videos``, ``/agnesapi``) and Alibaba Bailian (DashScope, whose
+     image and video endpoints are *not* OpenAI-shaped — see below).
 
 Why the proxy exists (2026-10-13)
 ---------------------------------
@@ -42,6 +43,31 @@ Security posture (SSRF guard)
   user-supplied — the request path itself is a same-origin page-provided
   relative path, so this is a connection relay, not an arbitrary-destination
   fetch.
+
+DashScope (Bailian) protocol notes
+----------------------------------
+Bailian's image/video endpoints are DashScope-native, not OpenAI-shaped, and
+that difference is why the relay cannot just forward them blindly:
+
+* **Image** — ``POST /api/v1/services/aigc/multimodal-generation/generation``.
+  The image goes in ``input.messages[].content[]`` with the ``image`` key set
+  to a **data URI** (``data:image/png;base64,...``); a bare base64 string is
+  rejected. Creation is **synchronous**: the answer already carries
+  ``output.choices[0].message.content[0].image``.
+* **Video** — ``POST /api/v1/services/aigc/video-generation/video-synthesis``
+  with header ``X-DashScope-Async: enable``. The reference image is
+  ``input.media`` — an **array of objects** ``[{"url": ..., "type":
+  "first_frame"}]``; a plain string array is rejected (``type`` must be one of
+  first_frame / last_frame / driving_audio / first_clip). Returns
+  ``output.task_id`` + ``task_status``; poll ``GET /api/v1/tasks/{task_id}``
+  until ``task_status`` is ``SUCCEEDED`` (answer carries ``output.video_url``)
+  or ``FAILED`` / ``CANCELED`` (answer carries ``code`` + ``message``).
+* Bailian's **OpenAI-compatible** mode (``/compatible-mode/v1``) does *not*
+  expose ``/images/generations`` (404), so the generic relay path never works
+  for its image models — the two dialect branches below are load-bearing.
+* Bailian **does** send permissive CORS headers, so a direct browser call would
+  work; the relay is kept anyway for the same reasons as the LLM channel
+  (single SSRF-guarded code path, Key never in the page's direct sight).
 
 Usage: ``python _serve.py [port]``   (default 8765, binds 127.0.0.1 only)
 """
@@ -76,8 +102,19 @@ LOCAL_HOSTNAMES = ("127.0.0.1", "localhost", "::1")
 # --------------------------------------------------------------------------
 # SSRF guard
 # --------------------------------------------------------------------------
+# RFC 2544 benchmarking range. No real service is reachable there, and it is
+# the default "fake-ip" pool of Clash / Mihomo style proxy tools: on a machine
+# running such a proxy (fake-ip + TUN mode) EVERY hostname resolves into this
+# range, so rejecting it would turn the guard into "reject everything" while
+# protecting nothing. The genuine SSRF surface (loopback / RFC1918 / link-local
+# / multicast / other reserved ranges) stays blocked exactly as before.
+_FAKE_IP_NET = ipaddress.ip_network("198.18.0.0/15")
+
+
 def _ip_is_forbidden(ip):
     """Loopback / private / link-local / reserved / multicast / unspecified."""
+    if ip.version == 4 and ip in _FAKE_IP_NET:
+        return False
     return (ip.is_loopback or ip.is_private or ip.is_link_local
             or ip.is_multicast or ip.is_reserved or ip.is_unspecified)
 
@@ -118,6 +155,36 @@ def _resolve_is_forbidden(host):
         if _ip_is_forbidden(ip):
             return "解析到本机/内网/保留地址"
     return None
+
+
+# Headers a client-supplied header map may never set: they change request
+# semantics (host routing, framing, connection handling) rather than carrying
+# application data. Content-Type stays ours (we always send JSON).
+_FORBIDDEN_HEADERS = {
+    "host", "content-length", "connection", "transfer-encoding", "upgrade",
+    "te", "trailer", "expect", "proxy-authorization", "proxy-connection",
+    "content-type", "cookie", "set-cookie",
+}
+
+
+def _header_name_ok(name):
+    """请求头名白名单：常见 HTTP token 字符，且挡掉会改变请求语义的头。"""
+    if not (1 <= len(name) <= 64):
+        return False
+    for i, c in enumerate(name):
+        if i == 0:
+            if not (c.isascii() and c.isalpha()):
+                return False
+        elif not (c.isascii() and (c.isalnum() or c == "-")):
+            return False
+    return name.lower() not in _FORBIDDEN_HEADERS
+
+
+def _header_value_ok(value, max_len):
+    """请求头值：不含控制字符（防 CRLF 注入）且不超长。"""
+    if len(value) > max_len:
+        return False
+    return not any(ord(c) < 0x20 or ord(c) == 0x7f for c in value)
 
 
 def validate_upstream(raw):
@@ -457,6 +524,22 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if not ok:
             return self._err(400, verr)
 
+        # ---- DashScope（百炼）专用端点：图像与视频都不是 OpenAI 形状 ----
+        # provider 是前端 provider 注册表（config.js MEDIA_PROVIDERS）里的平台 id；
+        # dialect 是旧字段名（2026-10-15 重命名为 provider），两者都认，平滑迁移。
+        dialect = str(payload.get("provider") or payload.get("dialect") or "").lower()
+        if dialect == "dashscope":
+            sub = str(payload.get("path") or "")
+            # 三个 DashScope 子端点，由前端按需选用：
+            #   /.dashscope-image  同步生成图像
+            #   /.dashscope-video  异步创建视频任务（带 X-DashScope-Async）
+            #   /.dashscope-task   轮询任务状态
+            if sub.startswith("/.dashscope-"):
+                return self._dashscope_image(base, payload) if sub == "/.dashscope-image" \
+                    else self._dashscope_video(base, payload) if sub == "/.dashscope-video" \
+                    else self._dashscope_task(base, payload) if sub == "/.dashscope-task" \
+                    else self._err(404, "未知 DashScope 端点")
+
         method = str(payload.get("method") or "GET").upper()
         if method not in ("GET", "POST"):
             return self._err(400, "method 仅支持 GET / POST")
@@ -489,12 +572,46 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 return self._err(400, "body 无法序列化")
 
         key = str(payload.get("key") or "").strip()
+
+        # ---- 自定义协议模板：可选认证头样式与额外请求头（仅 provider=custom） ----
+        # 头名走白名单（见 _header_name_ok，Host/Content-Length 这类一律拒绝），
+        # 头值不许含控制字符；其余 provider 的默认行为完全不变。
+        auth_header, auth_prefix, extra_headers = "Authorization", "Bearer ", {}
+        if dialect == "custom":
+            auth = payload.get("auth")
+            if isinstance(auth, dict):
+                hn = str(auth.get("header") or "").strip()
+                if hn:
+                    if not _header_name_ok(hn):
+                        return self._err(400, "auth.header 不是合法的请求头名")
+                    auth_header = hn
+                if auth.get("prefix") is not None:
+                    auth_prefix = str(auth.get("prefix"))
+                    if not _header_value_ok(auth_prefix, 64):
+                        return self._err(400, "auth.prefix 含非法字符或过长")
+            hs = payload.get("headers")
+            if hs is not None:
+                if not isinstance(hs, dict):
+                    return self._err(400, "headers 必须是 JSON 对象")
+                if len(hs) > 8:
+                    return self._err(400, "额外请求头最多 8 个")
+                for hn2, hv in hs.items():
+                    name2 = str(hn2)
+                    if not _header_name_ok(name2):
+                        return self._err(400, "请求头名不合法：" + name2)
+                    sval = str(hv)
+                    if not _header_value_ok(sval, 512):
+                        return self._err(400, "请求头值不合法：" + name2)
+                    extra_headers[name2] = sval
+
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("User-Agent", "QianwenWanxiang/1.0")
         if data is not None:
             req.add_header("Content-Type", "application/json")
         if key:
-            req.add_header("Authorization", "Bearer " + key)
+            req.add_header(auth_header, auth_prefix + key)
+        for hn3, hv3 in extra_headers.items():
+            req.add_header(hn3, hv3)
 
         try:
             upstream = _OPENER.open(req, timeout=UPSTREAM_TIMEOUT)
@@ -540,6 +657,119 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except OSError as e:
             return self._err(502, "无法连接 %s:%d（%s）" % (u.hostname, port, e))
         return self._json(200, {"ok": True, "base": base, "host": u.hostname, "port": port})
+
+    def _dashscope_task(self, base, payload):
+        """Poll a DashScope async task: GET /api/v1/tasks/{task_id}."""
+        task_id = str(payload.get("taskId") or "").strip()
+        if not task_id:
+            return self._err(400, "缺少 taskId")
+        # taskId 只做路径段用，且必须是 UUID 形状（DashScope 返回的即 UUID）
+        import uuid as _uuid
+        try:
+            _uuid.UUID(task_id)
+        except ValueError:
+            return self._err(400, "taskId 格式不正确")
+
+        key = str(payload.get("key") or "").strip()
+        req = urllib.request.Request(base + "/api/v1/tasks/" + task_id, method="GET")
+        req.add_header("User-Agent", "QianwenWanxiang/1.0")
+        if key:
+            req.add_header("Authorization", "Bearer " + key)
+
+        try:
+            upstream = _OPENER.open(req, timeout=UPSTREAM_TIMEOUT)
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = e.read()[:4000].decode("utf-8", "replace")
+            except Exception:
+                pass
+            return self._err(502, "上游返回 HTTP %d" % e.code,
+                             upstreamStatus=e.code, upstreamBody=detail)
+        except Exception as e:
+            return self._err(502, "无法连接上游：" + str(e))
+
+        self._relay_buffered(upstream)
+
+    def _dashscope_video(self, base, payload):
+        """Bailian (DashScope) video task creation.
+
+        与图像不同，视频是**异步**的：必须带 ``X-DashScope-Async: enable``
+        请求头，上游才会返回 ``output.task_id``；不带这个头会按同步接口处理
+        并直接失败。参考图走 ``input.media`` 对象数组（校验已在前端做）。
+        """
+        body = payload.get("body")
+        if not isinstance(body, dict) or not body.get("model"):
+            return self._err(400, "缺少 body.model")
+
+        key = str(payload.get("key") or "").strip()
+        url = base + "/api/v1/services/aigc/video-generation/video-synthesis"
+        req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                     method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("User-Agent", "QianwenWanxiang/1.0")
+        req.add_header("X-DashScope-Async", "enable")
+        if key:
+            req.add_header("Authorization", "Bearer " + key)
+
+        try:
+            upstream = _OPENER.open(req, timeout=UPSTREAM_TIMEOUT)
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = e.read()[:4000].decode("utf-8", "replace")
+            except Exception:
+                pass
+            return self._err(502, "上游返回 HTTP %d" % e.code,
+                             upstreamStatus=e.code, upstreamBody=detail)
+        except Exception as e:
+            return self._err(502, "无法连接上游：" + str(e))
+
+        self._relay_buffered(upstream)
+
+    def _dashscope_image(self, base, payload):
+        """Bailian (DashScope) image generation.
+
+        与 Agnes 的 OpenAI 形状不同：图像走 DashScope 原生
+        multimodal-generation 接口，且**同步**返回结果——任务创建与结果获取
+        一次完成，没有轮询。
+        """
+        model = str(payload.get("model") or "").strip()
+        if not model:
+            return self._err(400, "缺少图像模型名")
+        prompt = str(payload.get("prompt") or "").strip()
+        if not prompt:
+            return self._err(400, "缺少提示词")
+
+        body = payload.get("body")
+        if body is not None and not isinstance(body, dict):
+            return self._err(400, "body 必须是 JSON 对象")
+        body = body or {}
+
+        key = str(payload.get("key") or "").strip()
+
+        url = base + "/api/v1/services/aigc/multimodal-generation/generation"
+        req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"),
+                                     method="POST")
+        req.add_header("Content-Type", "application/json")
+        req.add_header("User-Agent", "QianwenWanxiang/1.0")
+        if key:
+            req.add_header("Authorization", "Bearer " + key)
+
+        try:
+            upstream = _OPENER.open(req, timeout=UPSTREAM_TIMEOUT)
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = e.read()[:4000].decode("utf-8", "replace")
+            except Exception:
+                pass
+            return self._err(502, "上游返回 HTTP %d" % e.code,
+                             upstreamStatus=e.code, upstreamBody=detail)
+        except Exception as e:
+            return self._err(502, "无法连接上游：" + str(e))
+
+        self._relay_buffered(upstream)
 
     def _relay_buffered(self, upstream):
         """Relay an upstream response verbatim (status + content-type + body).

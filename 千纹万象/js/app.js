@@ -790,6 +790,10 @@ function buildWishAiRender() {
         tag.textContent = "上游繁忙，正在重试（第 " + attempt + " 次，约 " + s + " 秒后）…";
         tag.className = "loading";
         void err;
+      }, (from, to) => {
+        /* 额度耗尽自动降级：透出换模型 */
+        tag.textContent = "「" + from + "」额度已耗尽，自动切换备用模型「" + to + "」…";
+        tag.className = "loading";
       });
       if (r.url) {
         img.src = r.url;
@@ -798,7 +802,7 @@ function buildWishAiRender() {
       } else if (r.b64) {
         img.src = "data:image/png;base64," + r.b64;
       }
-      tag.textContent = "AI 祈福图 · " + Agnes.getImageModel();
+      tag.textContent = "AI 祈福图 · " + (r.model || Agnes.getImageModel());
       tag.className = "";
     } catch (err) {
       let m = String(err && err.message || err);
@@ -1028,14 +1032,147 @@ function refreshAgnesStatus(msg, isErr) {
     el.textContent = msg;
     return;
   }
-  /* 已接入：显示平台与两个模型（读真实配置，不写死 Agnes 文案） */
+  /* 已接入：显示平台与两个模型（读真实配置，不写死平台文案） */
   if (Agnes.hasKey()) {
+    const p = (typeof MEDIA_PROVIDERS !== "undefined" && MEDIA_PROVIDERS[Agnes.getProvider()]) || {};
+    const pname = p.label ? p.label.split("（")[0] : Agnes.getProvider();
     el.className = "llm-status";
-    el.textContent = "✓ 已接入 · " + Agnes.modelLabel() + "（" + Agnes.getBaseUrl() + "）";
+    el.textContent = "✓ 已接入 · " + pname + " · " + Agnes.modelLabel() + "（" + Agnes.getBaseUrl() + "）";
   } else {
     el.className = "llm-status";
     el.textContent = "尚未配置 —— 填写平台地址、两个模型名与 Key 后即可启用 AI 渲染 / 视频";
   }
+}
+
+/* 媒体面板：把已存配置回显到输入框；按平台同步占位提示。
+   原为设置面板内部的局部函数，2026-10-15 提为文件级——开发机密钥预填
+   在页面加载后异步完成，需要它在那之后再刷一次面板，局部函数已不可达。 */
+function syncDialectHints() {
+  const dia = $("#mediaDialect");
+  const d = dia ? dia.value : "agnes";
+  const base = $("#mediaBase"), img = $("#mediaImageModel"), vid = $("#mediaVideoModel"),
+        ifb = $("#mediaImageFallbacks"), vfb = $("#mediaVideoFallbacks");
+  const hint = {
+    agnes: ["如 https://api.agnes-ai.cn", "如 agnes-image-2.5-flash", "如 agnes-video-2.5-flash", "", ""],
+    dashscope: ["如 https://ws-xxxx.cn-beijing.maas.aliyuncs.com", "如 qwen-image-2.1-pro", "如 wan2.7-i2v",
+                "如 qwen-image-2.0, wan2.7-image", "如 wan2.6-i2v, wanx2.1-i2v-turbo"],
+    custom: ["如 https://api.example.com（填平台文档给的地址）", "如 your-image-model", "如 your-video-model",
+             "如 model-a, model-b", "如 model-c, model-d"]
+  }[d];
+  if (base) base.placeholder = hint[0];
+  if (img) img.placeholder = hint[1];
+  if (vid) vid.placeholder = hint[2];
+  if (ifb) ifb.placeholder = hint[3];
+  if (vfb) vfb.placeholder = hint[4];
+}
+
+/* 自定义平台的协议详情区：只有「平台 = 自定义平台」时显示。
+   与 LLM 面板的 magpie/custom 同一套 .hidden 显隐模式。 */
+function applyMediaProvider() {
+  const dia = $("#mediaDialect");
+  const pane = $("#mediaProtoPane");
+  if (pane) pane.classList.toggle("hidden", !dia || dia.value !== "custom");
+}
+
+/* 协议对象 → 表单回显（默认值来自 config.js CUSTOM_PROTO_DEFAULTS，
+   用户在面板里改过的值以 localStorage 为准）。 */
+function fillProtoForm(proto) {
+  /* 归一化兜底：缺项/空值一律退回默认值。面板回显绝不能因为一个空值抛错——
+     fillMediaForm 跑在 buildLlmSetup 里，一旦抛错，其后的初始化（含路由绑定）
+     全部不会执行，整个页面会"所有点击都没反应"（2026-10-15 事故根因）。 */
+  proto = Agnes._protoMerge(CUSTOM_PROTO_DEFAULTS, proto);
+  const set = (sel, v) => { const el = $(sel); if (el) el.value = (v === undefined || v === null) ? "" : String(v); };
+  set("#mediaProtoImagePath", proto.image.path);
+  set("#mediaProtoImageBody", proto.image.body);
+  set("#mediaProtoImageResult", proto.image.resultField);
+  set("#mediaProtoImageHeaders", proto.image.headers);
+  set("#mediaProtoCreatePath", proto.video.createPath);
+  set("#mediaProtoCreateBody", proto.video.createBody);
+  set("#mediaProtoIdField", proto.video.idField);
+  set("#mediaProtoPollPath", proto.video.pollPath);
+  set("#mediaProtoPollBase", proto.video.pollBase);
+  set("#mediaProtoPollInterval", proto.video.pollIntervalMs);
+  set("#mediaProtoStatus", proto.video.statusField);
+  set("#mediaProtoOk", proto.video.okValues);
+  set("#mediaProtoFail", proto.video.failValues);
+  set("#mediaProtoProgress", proto.video.progressField);
+  set("#mediaProtoResult", proto.video.resultField);
+  set("#mediaProtoVideoHeaders", proto.video.headers);
+  set("#mediaProtoAuthHeader", proto.auth.header);
+  set("#mediaProtoAuthPrefix", proto.auth.prefix);
+}
+
+/* 表单 → 协议对象。JSON 模板 / 额外请求头不是合法 JSON 或路径不以 / 开头时
+   返回 {err}，保存被拦并提示；认证前缀不做 trim（末尾空格有意义："Bearer "）。
+   返回 {proto} 时调用方直接 Agnes.setProto(proto)。 */
+function readProtoForm() {
+  const val = (sel) => { const el = $(sel); return el ? (el.value || "").trim() : ""; };
+  const raw = (sel) => { const el = $(sel); return el ? el.value : ""; };
+  const checkJson = (text, label) => {
+    /* 注意 I18n.tpl 的约定：中文侧由调用方拼好（tpl 只替换英文侧的 {n}），
+       所以这里不能用 "「{0}」…" 当中文模板——实测过，中文界面会原样显示 {0}。 */
+    if (!text) return I18n.tpl("「" + label + "」不能为空", '"{0}" cannot be empty', label);
+    try { JSON.parse(text); } catch (e) {
+      const msg = String((e && e.message) || e);
+      return I18n.tpl("「" + label + "」不是合法 JSON：" + msg,
+        '"{0}" is not valid JSON: {1}', label, msg);
+    }
+    return null;
+  };
+  const imgBody = raw("#mediaProtoImageBody").trim();
+  const vidBody = raw("#mediaProtoCreateBody").trim();
+  const imgHeaders = raw("#mediaProtoImageHeaders").trim();
+  const vidHeaders = raw("#mediaProtoVideoHeaders").trim();
+  const err = checkJson(imgBody, I18n.t("图像请求体模板"))
+    || checkJson(vidBody, I18n.t("视频创建请求体模板"));
+  if (err) return { err };
+  const checkHeaders = (text) => {
+    if (!text) return null;
+    try {
+      const h = JSON.parse(text);
+      if (!h || typeof h !== "object" || Array.isArray(h)) throw new Error("not an object");
+      return null;
+    } catch (e) {
+      return I18n.t("额外请求头必须是 JSON 对象（形如 {\"头部名\": \"值\"}）");
+    }
+  };
+  const herr = checkHeaders(imgHeaders) || checkHeaders(vidHeaders);
+  if (herr) return { err: herr };
+  const imgPath = val("#mediaProtoImagePath"), createPath = val("#mediaProtoCreatePath"), pollPath = val("#mediaProtoPollPath");
+  if (imgPath && !imgPath.startsWith("/")) return { err: I18n.t("图像请求路径必须以 / 开头") };
+  if (createPath && !createPath.startsWith("/")) return { err: I18n.t("视频创建路径必须以 / 开头") };
+  if (pollPath && !pollPath.startsWith("/")) return { err: I18n.t("轮询路径必须以 / 开头") };
+  return {
+    proto: {
+      image: { path: imgPath, body: imgBody, resultField: val("#mediaProtoImageResult"), headers: imgHeaders },
+      video: {
+        createPath: createPath, createBody: vidBody, idField: val("#mediaProtoIdField"),
+        pollPath: pollPath, pollBase: val("#mediaProtoPollBase"),
+        pollIntervalMs: Math.max(1000, parseInt(val("#mediaProtoPollInterval"), 10) || 3000),
+        statusField: val("#mediaProtoStatus"), okValues: val("#mediaProtoOk"), failValues: val("#mediaProtoFail"),
+        progressField: val("#mediaProtoProgress"), resultField: val("#mediaProtoResult"),
+        headers: vidHeaders
+      },
+      auth: { header: val("#mediaProtoAuthHeader"), prefix: raw("#mediaProtoAuthPrefix") }
+    }
+  };
+}
+
+function fillMediaForm() {
+  const base = $("#mediaBase"), img = $("#mediaImageModel"),
+        vid = $("#mediaVideoModel"), key = $("#mediaKey"),
+        dia = $("#mediaDialect"),
+        ifb = $("#mediaImageFallbacks"), vfb = $("#mediaVideoFallbacks");
+  if (base) base.value = Agnes.getBaseUrl();
+  if (img) img.value = Agnes.getImageModel();
+  if (vid) vid.value = Agnes.getVideoModel();
+  if (key) key.value = "";
+  if (dia) dia.value = Agnes.getProvider();
+  if (ifb) ifb.value = Agnes.getFallbacks("image").join(", ");
+  if (vfb) vfb.value = Agnes.getFallbacks("video").join(", ");
+  fillProtoForm(Agnes.getProto());
+  applyMediaProvider();
+  syncDialectHints();
 }
 
 /* magpie 可用性 + 模型下拉 */
@@ -1132,8 +1269,13 @@ function applyLlmProvider(p, opts) {
 function buildLlmSetup() {
   /* 清除 Key 时一并撤掉"已导入"标记：
      否则下次开发机启动不会重新导入 _local 里的 Key（该标记只在导入成功时置位），
-     用户会以为"Key 明明放好了却用不上"。 */
-  const clearSeedFlag = () => { try { localStorage.removeItem(KEY_SEED_FLAG); } catch (e) {} };
+     用户会以为"Key 明明放好了却用不上"。媒体配置预填标记同理。 */
+  const clearSeedFlag = () => {
+    try {
+      localStorage.removeItem(KEY_SEED_FLAG);
+      localStorage.removeItem(MEDIA_SEED_FLAG);
+    } catch (e) {}
+  };
 
   /* 接入方式切换 */
   $$(".llm-prov-btn").forEach(b => {
@@ -1224,16 +1366,10 @@ function buildLlmSetup() {
   }
 
   /* 图像 / 视频模型：与大语言模型「自定义接口」同一套接入规则——
-     平台地址 + API Key + 图像/视频两个模型名，配置只存本机 localStorage。
-     默认值已带入项目长期接入的 Agnes 平台与 Image / Video 2.5 Flash 两个模型。 */
-  const fillMediaForm = () => {
-    const base = $("#mediaBase"), img = $("#mediaImageModel"),
-          vid = $("#mediaVideoModel"), key = $("#mediaKey");
-    if (base) base.value = Agnes.getBaseUrl();
-    if (img) img.value = Agnes.getImageModel();
-    if (vid) vid.value = Agnes.getVideoModel();
-    if (key) key.value = "";
-  };
+     平台（协议）+ 地址 + API Key + 图像/视频两个模型名 + 两条备用链，
+     配置只存本机 localStorage。默认值来自 config.js 的 MEDIA_PROVIDERS。
+     fillMediaForm / syncDialectHints 见 refreshAgnesStatus 之后的文件级定义
+     ——开发机密钥预填是异步完成的，需要它们在预填后再刷一次面板。 */
 
   const ms = $("#mediaSave");
   if (ms) {
@@ -1242,16 +1378,43 @@ function buildLlmSetup() {
       const img = ($("#mediaImageModel").value || "").trim();
       const vid = ($("#mediaVideoModel").value || "").trim();
       const key = ($("#mediaKey").value || "").trim();
+      const dia = ($("#mediaDialect").value || "agnes").trim();
       if (!base) { refreshAgnesStatus("请填写平台地址（Base URL）", true); $("#mediaBase").focus(); return; }
       if (!key) { refreshAgnesStatus("请填写 API Key", true); $("#mediaKey").focus(); return; }
       if (!img) { refreshAgnesStatus("请填写图像模型名", true); $("#mediaImageModel").focus(); return; }
       if (!vid) { refreshAgnesStatus("请填写视频模型名", true); $("#mediaVideoModel").focus(); return; }
+      /* 自定义平台：先校验协议详情的 JSON 模板，合法才连同一起保存 */
+      if (dia === "custom") {
+        const { proto, err } = readProtoForm();
+        if (err) { refreshAgnesStatus(err, true); return; }
+        Agnes.setProto(proto);
+      }
+      Agnes.setProvider(dia);
       Agnes.setBaseUrl(base);
       Agnes.setImageModel(img);
       Agnes.setVideoModel(vid);
+      Agnes.setFallbacks("image", ($("#mediaImageFallbacks").value || "").trim());
+      Agnes.setFallbacks("video", ($("#mediaVideoFallbacks").value || "").trim());
       Agnes.setKey(key);
       $("#mediaKey").value = "";
-      refreshAgnesStatus("已保存 · " + img + " / " + vid, false);
+      const p = (typeof MEDIA_PROVIDERS !== "undefined" && MEDIA_PROVIDERS[dia]) || {};
+      const pname = p.label ? p.label.split("（")[0] : dia;
+      refreshAgnesStatus("已保存 · " + pname + " · " + img + " / " + vid, false);
+    };
+  }
+  const dsel = $("#mediaDialect");
+  if (dsel) dsel.onchange = () => { syncDialectHints(); applyMediaProvider(); };
+
+  /* 协议模板：套用 = 默认值 + 预置覆盖，只改表单、不落库（点「保存」才生效），
+     套用后仍可逐项修改——这正是"不写代码接平台"的入口。 */
+  const psel = $("#mediaProtoPreset");
+  if (psel) {
+    psel.onchange = () => {
+      const pre = (typeof CUSTOM_PROTO_PRESETS !== "undefined" && CUSTOM_PROTO_PRESETS[psel.value]) || null;
+      if (!pre) return;
+      fillProtoForm(Agnes._protoMerge(CUSTOM_PROTO_DEFAULTS, pre.over || {}));
+      refreshAgnesStatus(I18n.tpl("已套用协议模板「" + I18n.t(pre.label) + "」，可逐项修改后点「保存」",
+        'Template "{0}" applied - tweak any field, then Save', I18n.t(pre.label)), false);
     };
   }
   const mc = $("#mediaClear");
@@ -1338,6 +1501,10 @@ function buildAiRender() {
         const s = Math.round(waitMs / 1000);
         tag.textContent = "上游繁忙，正在重试（第 " + attempt + " 次，约 " + s + " 秒后）…";
         tag.className = "loading";
+      }, (from, to) => {
+        /* 额度耗尽自动降级：透出换模型这件事，避免"以为还在用主模型"的误解 */
+        tag.textContent = "「" + from + "」额度已耗尽，自动切换备用模型「" + to + "」…";
+        tag.className = "loading";
       });
       if (r.url) {
         img.src = r.url;
@@ -1347,7 +1514,7 @@ function buildAiRender() {
         img.src = "data:image/png;base64," + r.b64;
         $("#aiResultOpen").style.display = "none";
       }
-      tag.textContent = "AI 实物渲染 · " + Agnes.getImageModel();
+      tag.textContent = "AI 实物渲染 · " + (r.model || Agnes.getImageModel());
       tag.className = "";
     } catch (err) {
       let m = String(err && err.message || err);
@@ -1422,18 +1589,24 @@ function buildAiRender() {
       const nums = { plate: "瓷盘", vase: "梅瓶", fan: "折扇", fabric: "织锦" };
       const prompt = "以参考图 <Picture 1> 中的" + nums[Mockups.current] + "为对象，拍摄一段转台 360 度缓慢旋转的产品展示视频，保持器物的纹样与配色完全不变，柔和影棚灯光，木质桌面背景，镜头平稳环绕，电影级画质。";
 
-      const { taskId } = await Agnes.createVideo({ prompt, imageUrl }, (attempt, waitMs) => {
+      let vidModelUsed = Agnes.getVideoModel();
+      const { taskId, model } = await Agnes.createVideo({ prompt, imageUrl }, (attempt, waitMs) => {
         /* 视频创建是实测最常被「队列已满」拒绝的一步，重试状态必须可见 */
         const s = Math.round(waitMs / 1000);
         tag.textContent = "视频队列繁忙，正在重试（第 " + attempt + " 次，约 " + s + " 秒后）…";
         tag.className = "loading";
+      }, (from, to) => {
+        /* 额度耗尽自动降级：必须透出，否则用户以为还在烧主模型的额度 */
+        vidModelUsed = to;
+        tag.textContent = "「" + from + "」额度已耗尽，自动切换备用模型「" + to + "」…";
       });
+      vidModelUsed = model || vidModelUsed;
       const r = await Agnes.waitVideo(taskId, (st, prog) => {
         const pct = (typeof prog === "number" ? prog : 0);
         tag.textContent = "AI 视频生成中…（完成 " + pct + "%）";
-      }, 10 * 60 * 1000);
+      }, 10 * 60 * 1000, vidModelUsed);
       video.src = r.url;
-      tag.textContent = "AI 全视角视频 · " + Agnes.getVideoModel();
+      tag.textContent = "AI 全视角视频 · " + vidModelUsed;
       tag.className = "";
       video.scrollIntoView({ behavior: "smooth", block: "center" });
     } catch (err) {
@@ -1449,9 +1622,17 @@ function buildAiRender() {
 
 /* ---------- 本机密钥自动导入（仅开发机生效） ----------
  * 作品源码与提交包内不含任何凭据：
- * 真实 Key 存放在作品目录之外的 _dev\keys.local.js，由 _dev\开发启动.bat
- * 在启动时临时投放到作品目录（会话结束、服务停止时删除）。
+ * 真实 Key 存放在作品目录之外的 _dev\keys.local.js，由「启动作品.bat」
+ * 检测到该文件时临时投放到作品目录（服务停止时删除；硬关窗口残留的副本
+ * 会在下次启动时被清掉）。评委机器上不存在该文件：启动器不投放，
+ * 页面按"未配置"让用户在自己的设置面板里手填。
  * 仅在 localhost 下尝试加载；文件不存在时静默跳过（评委机器上不存在该文件）。
+ *
+ * keys.local.js 里的两段配置各自独立落标记，互不牵连：
+ *   shup / agnes —— 大语言模型与 Agnes 的 Key（原有段）；
+ *   media        —— 图像/视频平台全套（provider / 地址 / 两个模型 / 备用链 / Key）。
+ *   媒体段逐项「空则填、非空不覆盖」：页面里手改过的值不会被下次启动改回去；
+ *   想恢复预填 = 面板点「清除 Key」（会放行下次预填）或清站点数据。
  *
  * ★ 为什么要重试（2026-10-13 修）：页面只在**首次加载**读一次 Key，
  *   而开发启动器早期版本是"启动 18 秒后删除 _local"——若页面加载晚于该时刻
@@ -1460,10 +1641,37 @@ function buildAiRender() {
  *   现在启动器已改为"服务停止时才清理"，这里再加 3 次重试兜底，
  *   并把失败原因显示出来，避免静默降级难以察觉。 */
 const KEY_SEED_FLAG = "qianwen_keys_seeded";
+const MEDIA_SEED_FLAG = "qianwen_media_seeded";
 let _keyImportTried = 0;
 
+/* media 段预填。逐项空则填、非空不覆盖；平台与存的不一致时先交给
+   setProvider 归位（它会重置"明显属于别家"的地址与模型名），再补空项。
+   Key 不在本函数处理——媒体 Key 由调用方每次载入都以文件为准对齐
+   （见 autoImportKeys 里的说明：Key 不回显，静默残留最危险）。 */
+function importMediaSeed(m) {
+  if (!m || typeof m !== "object") return;
+  const has = (key) => !!(localStorage.getItem(key) || "").trim();
+  try {
+    if (m.provider && MEDIA_PROVIDERS[m.provider] &&
+        (!has(AGNES_CONFIG.providerStorageKey) || Agnes.getProvider() !== m.provider)) {
+      Agnes.setProvider(m.provider);
+    }
+    if (m.baseUrl && !has(AGNES_CONFIG.baseStorageKey)) Agnes.setBaseUrl(m.baseUrl);
+    if (m.imageModel && !has(AGNES_CONFIG.imageModelStorageKey)) Agnes.setImageModel(m.imageModel);
+    if (m.videoModel && !has(AGNES_CONFIG.videoModelStorageKey)) Agnes.setVideoModel(m.videoModel);
+    if (m.imageFallbacks && !has(AGNES_CONFIG.imageFallbacksStorageKey)) Agnes.setFallbacks("image", m.imageFallbacks);
+    if (m.videoFallbacks && !has(AGNES_CONFIG.videoFallbacksStorageKey)) Agnes.setFallbacks("video", m.videoFallbacks);
+    /* 自定义平台的协议描述（可选段：keys.local.js 的 media.protocol 对象） */
+    if (m.protocol && typeof m.protocol === "object" && !has(AGNES_CONFIG.protoStorageKey)) Agnes.setProto(m.protocol);
+  } catch (e) { /* 预填失败不影响正常使用（面板可手填） */ }
+}
+
 function autoImportKeys() {
-  if (localStorage.getItem(KEY_SEED_FLAG)) return;
+  const needLlm = !localStorage.getItem(KEY_SEED_FLAG);
+  const needMedia = !localStorage.getItem(MEDIA_SEED_FLAG);
+  /* 注意：即使两个标记都已落位也要继续尝试加载本文件——媒体 Key 需要
+     **每次载入**都对齐（理由见下），而开发会话期间 _local 只在启动器
+     运行期存在，多加载一个本地小文件的开销可以忽略。 */
   if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) return;
   if (_keyImportTried >= 3) return;
   _keyImportTried++;
@@ -1472,22 +1680,36 @@ function autoImportKeys() {
   s.src = "_local/keys.local.js";
   s.onload = () => {
     const k = window.EMBEDDED_KEYS;
-    if (!k || (!k.shup && !k.agnes)) { scheduleKeyRetry(); return; }
+    if (!k || (!k.shup && !k.agnes && !k.media)) { scheduleKeyRetry(); return; }
     /* 大语言模型：开发机默认走本机 magpie（零配置，模型清单动态拉取）。
        若开发机还留着一把直连 Key，就把它作为「自定义接口」的备用配置存下来
        —— 但**不覆盖**当前 provider 选择，否则开发机上会莫名其妙地不走 magpie。 */
-    if (k.shup) {
+    if (needLlm && k.shup) {
       try {
         if (!localStorage.getItem(LLM_CONFIG.keyStorageKey)) {
           localStorage.setItem(LLM_CONFIG.keyStorageKey, k.shup);
         }
+        localStorage.setItem(KEY_SEED_FLAG, "1");   // 仅确实导入成功才落标记
       } catch (e) {}
     }
-    if (k.agnes) Agnes.setKey(k.agnes);
-    // 仅当确实导入成功才落标记；否则保留机会给下次开发机启动
-    localStorage.setItem(KEY_SEED_FLAG, "1");
-    // 状态面板可能已渲染，刷新一次让它显示当前接入目标
-    try { applyLlmProvider(LLM.getProvider(), { silent: true }); refreshAgnesStatus(); } catch (e) {}
+    /* 媒体 Key：**每次载入都以 keys.local.js 为准**（不一致就覆盖）。
+       理由（2026-10-15 实测）：媒体 Key 在输入框里从不回显，旧 Key 静默残留时
+       页面照样显示「✓ 已接入」、实际一用就 401 Invalid API-key——用户既看不见
+       也无从排查。开发机上要换 Key，请直接改 _dev\keys.local.js（本文件只在
+       开发会话期间被投放到 _local，覆盖的窗口期就是会话本身）。 */
+    if (k.media && k.media.key) {
+      try { if (Agnes.getKey() !== k.media.key) Agnes.setKey(k.media.key); } catch (e) {}
+    }
+    /* 媒体其余配置（平台/地址/模型/备用链/协议）：只在首次（无标记）时导入，
+       且「空则填、非空不覆盖」——这些字段在面板里可见可改，手改会被尊重。 */
+    if (needMedia && (k.media || k.agnes)) {
+      if (k.media) importMediaSeed(k.media);
+      /* 老版 keys.local.js 只有一把 Agnes Key：没有 media 段时按 Agnes Key 兜底 */
+      else { try { if (!Agnes.getKey()) Agnes.setKey(k.agnes); } catch (e) {} }
+      try { localStorage.setItem(MEDIA_SEED_FLAG, "1"); } catch (e) {}
+    }
+    // 状态面板与设置区的输入框可能已渲染，刷新一次让两处一起同步
+    try { applyLlmProvider(LLM.getProvider(), { silent: true }); refreshAgnesStatus(); fillMediaForm(); } catch (e) {}
     if (typeof Guru !== "undefined" && Guru.refreshMode) Guru.refreshMode();
   };
   s.onerror = () => { scheduleKeyRetry(); };   // 无凭据/暂不可达：稍后重试，不影响功能
@@ -1641,10 +1863,37 @@ document.addEventListener("DOMContentLoaded", () => {
      排在 i18n.js 之前注册），所以词典一定已装载、翻译也已完成。 */
   if (typeof I18n !== "undefined") I18n.init();
   autoImportKeys();
-  renderCatRow();
-  buildChips();
-  renderPlateChips();
-  buildJianFilters();
+
+  /* 初始化加固（2026-10-15 事故复盘）：各模块初始化一旦抛错，其后所有接线都会被
+     跳过——事故现场是 buildLlmSetup 抛错，连文件末尾的路由绑定都没执行，
+     表现成"页面所有点击都没反应"。两道防线：
+       ① 路由绑定提到最前：导航与切页永不因后续初始化失败而失效；
+       ② safeInit 隔离各模块：一个模块坏了其余照常，并报到控制台。 */
+  const safeInit = (name, fn) => {
+    try { fn(); } catch (e) {
+      try { console.error("[init] " + name + " 初始化失败（其余功能不受影响）：", e); } catch (_) {}
+    }
+  };
+
+  /* ---- 多级路由（提前到最前） ---- */
+  window.addEventListener("hashchange", routeFromHash);
+  const brand = document.querySelector(".nav-brand");
+  if (brand) {
+    brand.onclick = () => navigate("home");
+    brand.onkeydown = e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate("home"); }
+    };
+  }
+
+  safeInit("返回按钮", () => {
+    $("#plateBack").onclick = () => navigate("jian");
+    $("#albumBack").onclick = () => navigate("fang");
+  });
+
+  safeInit("纹库分类", renderCatRow);
+  safeInit("骨架选择", buildChips);
+  safeInit("真迹贴条", renderPlateChips);
+  safeInit("纹库筛选", buildJianFilters);
   /* 纹库延后到真正打开该页时再渲染（showPage("jian") 会调 buildGuide）：
      109 张卡片 + 109 个 <img> 不再计入启动成本 */
   const js = $("#jianSearch");
@@ -1655,27 +1904,27 @@ document.addEventListener("DOMContentLoaded", () => {
       jt = setTimeout(() => { jianQuery = js.value; buildGuide(); }, 180);
     });
   }
-  renderWorkshop();
-  buildThemeSeg();
-  buildLlmSetup();
-  buildAiRender();
-  buildWishAiRender();
-  buildPatternCode();
-  buildTexStrip();
-  buildDemoUI();
-  Mockups.init();
-  Collection.init();
+  safeInit("工坊", renderWorkshop);
+  safeInit("配色分段", buildThemeSeg);
+  safeInit("模型接入设置", buildLlmSetup);
+  safeInit("AI 渲染", buildAiRender);
+  safeInit("祈福图", buildWishAiRender);
+  safeInit("纹样密码", buildPatternCode);
+  safeInit("真迹直贴条", buildTexStrip);
+  safeInit("演示 UI", buildDemoUI);
+  safeInit("器物效果图", () => Mockups.init());
+  safeInit("收藏册", () => Collection.init());
   /* 一幅纹样的旅程（P1-4）：包装 showPage，切页时重绘旅程条。
      必须在这里（Guru 包装之前）接线，之后 Guru 再包一层，两层各调各的前一个实现。 */
-  if (typeof Journey !== "undefined") Journey.init();
+  if (typeof Journey !== "undefined") safeInit("旅程条", () => Journey.init());
   /* 纹样对比（P1-5）+ 限时挑战（P1-6）：入口按钮与弹层都在 DOM 里，直接接线 */
-  if (typeof Compare !== "undefined") Compare.init();
-  if (typeof Challenge !== "undefined") Challenge.init();
+  if (typeof Compare !== "undefined") safeInit("纹样对比", () => Compare.init());
+  if (typeof Challenge !== "undefined") safeInit("限时挑战", () => Challenge.init());
   /* 听·纹律按钮（工坊画台下）：拿到 DOM 即可接线，state 由 renderWorkshop 首次同步 */
-  if (typeof WenLv !== "undefined") WenLv.init();
+  if (typeof WenLv !== "undefined") safeInit("听·纹律", () => WenLv.init());
   /* 纹博士悬浮对话导览（js/guru.js）——放在最后初始化：
      它依赖 Plates / Guides / LLM 都已就绪，且需要读当前路由决定快捷提问 */
-  if (typeof Guru !== "undefined") {
+  if (typeof Guru !== "undefined") safeInit("纹博士", () => {
     Guru.init();
     /* 每次切页刷新快捷提问与模式提示，让"问什么"始终贴合眼前这一页 */
     const _show = showPage;
@@ -1687,9 +1936,11 @@ document.addEventListener("DOMContentLoaded", () => {
           语音就哑掉，属于过度打断——已改为保留朗读。） */
       if (typeof Guru !== "undefined") { Guru.renderAsks(); Guru.refreshMode(); }
     };
-  }
-  $("#wishBtn").onclick = makeWish;
-  $("#wishInput").addEventListener("keydown", e => { if (e.key === "Enter") makeWish(); });
+  });
+  safeInit("心愿按钮", () => {
+    $("#wishBtn").onclick = makeWish;
+    $("#wishInput").addEventListener("keydown", e => { if (e.key === "Enter") makeWish(); });
+  });
   /* 语言切换时重建各模块：这些模块把中文直接写进 DOM，靠词典整串替换覆盖不到
      「全部」这类已渲染的按钮文本，必须整块重绘。放在这里而不是各模块内部，
      是为了让 i18n 的注册只有一处，模块本身不需要知道 I18n 的存在。 */
@@ -1733,16 +1984,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Escape") closeLightbox();
   });
 
-  /* ---- 多级路由 ---- */
-  window.addEventListener("hashchange", routeFromHash);
-  const brand = document.querySelector(".nav-brand");
-  if (brand) {
-    brand.onclick = () => navigate("home");
-    brand.onkeydown = e => {
-      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate("home"); }
-    };
-  }
-  $("#plateBack").onclick = () => navigate("jian");
-  $("#albumBack").onclick = () => navigate("fang");
+  /* ---- 首屏路由（hashchange 监听与返回按钮已在初始化开头绑定） ---- */
   routeFromHash();
 });

@@ -87,6 +87,36 @@ function Wait-Port([int]$TimeoutMs = 20000) {
   return $false
 }
 
+# 上次会话残留的服务进程（强制关窗可能留下）已抢占本端口时先处理。
+# Windows 的 SO_REUSEADDR 允许第二个进程绑定同一端口，若不检测会出现
+# 「两个服务同时监听 8765」的怪状态（页面时好时坏、关窗也关不干净）。
+# 识别方式用「进程命令行」而不是端口枚举——实测双监听时
+# Get-NetTCPConnection 只会报出其中一个，不能依赖它。
+# 只清理确认属于本作品的 python _serve.py / http.server；别人的程序
+# 占用端口则明确报错退出，绝不误杀。
+function Clear-StaleListener {
+  $stale = @()
+  try {
+    $pat = '(_serve\.py|http\.server)\s+' + $Port + '(\s|$)'
+    $stale = @(Get-CimInstance Win32_Process -Filter "name='python.exe' or name='py.exe' or name='pythonw.exe'" |
+      Where-Object { $_.CommandLine -and ($_.CommandLine -match $pat) })
+  } catch {}
+  foreach ($p in $stale) {
+    Info "清理上次残留的服务进程（PID $($p.ProcessId)）——多半是强制关窗留下的。"
+    try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+  }
+  if ($stale.Count -gt 0) { Start-Sleep -Milliseconds 500 }
+
+  $conns = @()
+  try { $conns = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) } catch { return }
+  foreach ($c in $conns) {
+    $name = "?"
+    try { $name = (Get-Process -Id $c.OwningProcess -ErrorAction SilentlyContinue).ProcessName } catch {}
+    Fail "端口 $Port 仍被其他程序占用（$name，PID $($c.OwningProcess)）。请先关闭它再启动，否则页面会时好时坏。"
+    exit 1
+  }
+}
+
 # ---------------------------------------------------------------- 1. Python
 function Try-Python {
   if ($ForceNative) { return $false }
@@ -270,5 +300,6 @@ if (-not (Test-Path -LiteralPath (Join-Path $Root "index.html"))) {
   exit 1
 }
 
+Clear-StaleListener
 if (Try-Python) { exit 0 }
 Run-Native
