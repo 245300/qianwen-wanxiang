@@ -134,6 +134,43 @@ const LLM = {
     return cap.reasoning !== false;
   },
 
+  /* 从上游 400 错误里学会模型的上下文上限，返回 true 表示"这是新信息，值得重发一次"。
+   *
+   * 为什么需要（2026-10-16 实测）：`clampToModel` 的能力收敛依赖 /v1/models
+   * 返回 context_window / max_output_tokens，但**并非所有端点都返回**——
+   * discovery-api.intern-ai.org.cn 的 /v1/models 只给 id 与 owned_by，
+   * 于是前端按"顶格乐观"发 262144，被上游 400 拒绝：
+   *   "This model's maximum context length is 262144 tokens. However, you
+   *    requested 262144 output tokens and your prompt contains 343 characters"
+   * 根因是**上下文由输入+输出共享**，顶格输出必然越界。
+   * 上游这句话里已经写明了真实上限，直接读出来存进能力缓存，
+   * 重发一次即自动收敛——比让用户手改 config 或猜数值可靠得多。
+   *
+   * 只认"上下文超限"这一类错误，其它 400（参数名错、模型不存在）不碰；
+   * 同一上限只学一次（重复返回 false），因此重发最多一层，不会死循环。 */
+  _learnContextLimit(msg) {
+    const text = String(msg || "");
+    if (!/context length|context window/i.test(text)) return false;
+    const m = text.match(/(\d{3,})/);
+    if (!m) return false;
+    const limit = Number(m[1]);
+    if (!Number.isFinite(limit) || limit <= 0) return false;
+    /* 键必须与 clampToModel / supportsVision 的读取方式一致（裸模型名）：
+       这三处都用 this._caps[this.getModel()]，而 _capsKey() 是 provider|model
+       的另一种形态（只用于日志式区分）。用错键会让"学到的上限"永远读不到，
+       表现为自愈静默失效（2026-10-16 实测踩到）。 */
+    const key = this.getModel();
+    const prev = this._caps[key] || {};
+    if (prev.context === limit) return false;      // 已经知道，别再重发
+    this._caps[key] = {
+      context: limit,
+      maxOutput: prev.maxOutput || 0,
+      vision: prev.vision !== false,
+      reasoning: prev.reasoning !== false
+    };
+    return true;
+  },
+
   /* ---------- 同源代理：发一次请求 ---------- */
   _proxyFetch(body, signal) {
     const payload = {
@@ -199,18 +236,33 @@ const LLM = {
        早年因此长期表现为"签文总是降级成本地规则签文"（接口没坏，是本地提前掐断）。
        流式下每个增量都算活动，配合 5 分钟上限基本不会假失败；
        这里只累积文本、不做打字机（签文是一次性落卡，中途半句没有意义）。 */
-    let text = "";
-    try {
-      text = await this._chatOnce(
+    const askOnce = async (opts) => {
+      let acc = "";
+      const out = await this._chatOnce(
         [
           { role: "system", content: sys },
           { role: "user", content: user }
         ],
-        (chunk) => { text += chunk; },
-        { stream: true, temperature: 0.9, maxTokens: 800 }
+        (chunk) => { acc += chunk; },
+        opts
       );
+      return out || acc;
+    };
+    /* 签文额度：旧值 800 是按"直答模型"定的。带深度思考的模型（如 DeepSeek 官方
+       deepseek-flash，默认 effort=high）会先烧掉几百 token 推理再落正文，
+       800 会被推理吃光——finish_reason=length 而正文一字皆无
+       （2026-10-16 实测：同一请求 800 必失败、1500 起成功，推理约用 420~800）。
+       max_tokens 是上限而非预扣，给足对不推理的模型没有任何代价。 */
+    const maxTok = LLM_CONFIG.qianMaxTokens || 4096;
+    let text = "";
+    try {
+      text = await askOnce({ stream: true, temperature: 0.9, maxTokens: maxTok });
     } catch (e) {
-      throw new Error(e && e.message || e);
+      /* 推理远长于正文时仍可能吃光额度：再给一次机会并显式关掉思考。
+         不认这个参数的平台会忽略它（实测 DeepSeek 忽略但不报错），
+         认它的平台就能在同一份额度里正常落正文。 */
+      if (!/推理/.test(String((e && e.message) || e))) throw new Error(e && e.message || e);
+      text = await askOnce({ stream: true, temperature: 0.9, maxTokens: maxTok, reasoning: false });
     }
     if (!text) throw new Error("模型返回为空");
 
@@ -265,6 +317,11 @@ const LLM = {
    * opts 可选：{ stream, temperature, maxTokens, reasoning } —— 签文链路用它
    * 覆盖默认参数（见 makeQian 注释），不传时走 config 里的对话默认值。 */
   async _chatOnce(messages, onDelta, opts) {
+    return this._chatOnceInner(messages, onDelta, opts, 0);
+  },
+
+  /* 真正的单次调用。learned 计数防递归：只允许"学到上限后重发一次"。 */
+  async _chatOnceInner(messages, onDelta, opts, learned) {
     if (!this.hasKey()) throw new Error("未配置模型（请在「模型接入设置」里选择或填写）");
 
     const o = opts || {};
@@ -296,6 +353,11 @@ const LLM = {
     if (!res.ok) {
       clearTimeout(timer);
       const err = await this._proxyError(res);
+      /* 上下文超限且上游报出了真实上限：学会它并重发一次（见 _learnContextLimit）。
+         这是"端点不返回能力字段"场景下的自愈路径，避免顶格 max_tokens 必然 400。 */
+      if (learned < 1 && err.upstreamStatus === 400 && this._learnContextLimit(err.message)) {
+        return this._chatOnceInner(messages, onDelta, opts, learned + 1);
+      }
       /* 参数类错误标 fatal：重试没有意义，且要让上层能据此去图/去 reasoning 重试 */
       if (err.upstreamStatus === 400 || err.upstreamStatus === 404 || err.upstreamStatus === 422) {
         err.fatal = true;

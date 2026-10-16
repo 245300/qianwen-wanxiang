@@ -160,17 +160,27 @@ const Agnes = {
 
   /* 模板填充：JSON 文本 → 请求体对象。
    *  · 字符串恰为 "{token}" → 整体替换为该变量的字符串形式；
+   *  · 字符串恰为 "{token:num}" → 整体替换为**数字**（见下）；
    *  · 字符串内嵌 "{token}" → 按字符串插值（如 "…--duration {seconds}"）；
    *  · 未知占位符原样保留（让上游报错时能看出是哪个字段没填对）。
-   * 一律替换为**字符串**是实测结论（2026-10-15）：Agnes 收到数字型 seconds 会
-   * 直接 400 invalid_json，只认字符串；百炼（DashScope）两种都收。平台上若
-   * 必须给数字（如某些 duration 字段），在模板里写死字面量即可（"duration": 6）。
+   *
+   * 为什么默认替换成字符串（2026-10-15 实测）：Agnes 收到数字型 seconds 会
+   * 直接 400 invalid_json，只认字符串。
+   *
+   * 为什么还要 `:num` 后缀（2026-10-16 实测）：有些平台的字段**只收数字**，
+   * 且写错形状不会立刻报错——百炼 wan2.7-i2v 的 parameters.duration 收到
+   * 字符串 "5" 时任务**先受理成功**（返回 task_id），几秒后才
+   * FAILED: Input should be a valid integer: parameters.duration。
+   * 这种"先成功后失败"最难排查，所以给出显式的数字占位符：
+   * 模板里写 {seconds:num} 即可；字符串插值形态（嵌在串里）不参与数字转换，
+   * 因为把数字塞进字符串里没有意义。
    * 模板不是合法 JSON 时抛出可读错误（面板保存前也会校验一次）。 */
   _fillTpl(text, vars) {
     let tpl;
     try { tpl = JSON.parse(String(text || "")); }
     catch (e) { throw new Error("协议模板不是合法 JSON：" + (e && e.message ? e.message : e)); }
     const has = (k) => Object.prototype.hasOwnProperty.call(vars, k);
+    const whole = /^\{([A-Za-z_]\w*)(?::(num|number|int))?\}$/;
     const walk = (v) => {
       if (Array.isArray(v)) return v.map(walk);
       if (v && typeof v === "object") {
@@ -179,11 +189,16 @@ const Agnes = {
         return o;
       }
       if (typeof v !== "string") return v;
-      if (/^\{[A-Za-z_]\w*\}$/.test(v)) {
-        const name = v.slice(1, -1);
-        if (has(name)) return String(vars[name]);
+      const m = v.match(whole);
+      if (m && has(m[1])) {
+        if (!m[2]) return String(vars[m[1]]);
+        const n = Number(vars[m[1]]);
+        if (!Number.isFinite(n)) {
+          throw new Error("占位符 {" + m[1] + ":num} 需要数字，实际拿到「" + vars[m[1]] + "」");
+        }
+        return n;
       }
-      return v.replace(/\{(\w+)\}/g, (m, k) => has(k) ? String(vars[k]) : m);
+      return v.replace(/\{(\w+)\}/g, (mm, k) => has(k) ? String(vars[k]) : mm);
     };
     return walk(tpl);
   },
@@ -640,10 +655,19 @@ const Agnes = {
      task_id / video_id / id——_find 按字段名递归查找，不要求层级）。 */
   async _customCreateVideo(model, { prompt, imageUrl, seconds }, onRetry) {
     const p = this.getProto();
-    const body = this._fillTpl(p.video.createBody, {
+    const vars = {
       model, prompt, image: imageUrl || "",
       seconds: Math.max(1, Number(seconds) || 6)
+    };
+    /* 备用请求体：同一条备用链上的模型代际可能不通用参数形状
+       （实测百炼 wan2.7 收 input.media 数组、wan2.6 只收 input.img_url 字符串，
+       写错形状会"先受理成功、十几秒后 FAILED"）。
+       altMatch 命中当前 model 时改用 altCreateBody，让跨代备用链真正可用。 */
+    const alt = this._clean(p.video.altCreateBody);
+    const hit = alt && this._csv(p.video.altMatch, []).some(function (f) {
+      return String(model || "").toLowerCase().indexOf(f) >= 0;
     });
+    const body = this._fillTpl(hit ? alt : p.video.createBody, vars);
     const j = await this._withRetry("视频任务创建", () =>
       this._relay("POST", p.video.createPath, null, body, null, this._protoExtra(p, "video")), onRetry);
     if (j && j.error && j.error.message) throw new Error("视频接口错误：" + j.error.message);

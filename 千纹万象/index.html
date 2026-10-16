@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>千纹万象——中国传统纹样生成式数字体验</title>
 <link rel="preload" href="assets/fonts/qw-serif-bold.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="css/style.css?v=20261015h">
+<link rel="stylesheet" href="css/style.css?v=20261016e">
 </head>
 <body>
 <!-- 主题早应用（防首帧闪烁）：素 su / 宣纸 xuan / 墨夜 mo，与 app.js 的 applyTheme 同一套存储键 -->
@@ -436,8 +436,11 @@
               <p class="llm-key-label llm-key-label-sep">视频接口（创建任务 + 轮询取片）</p>
               <p class="llm-key-label">创建路径</p>
               <input type="text" id="mediaProtoCreatePath" placeholder="如 /v1/videos" autocomplete="off">
-              <p class="llm-key-label">创建请求体模板（JSON，另支持 {seconds}）</p>
+              <p class="llm-key-label">创建请求体模板（JSON，另支持 {seconds} / {seconds:num}）</p>
               <textarea id="mediaProtoCreateBody" rows="6" spellcheck="false"></textarea>
+              <p class="llm-key-label">备用请求体（可选：备用链上形状不同的模型用它；留空 = 不使用）</p>
+              <input type="text" id="mediaProtoAltMatch" placeholder="命中的模型名片段，逗号分隔（如 wan2.6, wanx）" autocomplete="off">
+              <textarea id="mediaProtoAltBody" rows="5" spellcheck="false" placeholder="模型名命中上一行时改用这个请求体"></textarea>
               <p class="llm-key-label">任务号字段名（留空 = 自动找 task_id / video_id / id）</p>
               <input type="text" id="mediaProtoIdField" placeholder="普通平台留空即可" autocomplete="off">
               <p class="llm-key-label">轮询路径（{taskId} 与 {model} 会被替换）</p>
@@ -678,33 +681,33 @@
 
 <button class="to-top" id="toTopBtn" title="回到顶部">↑</button>
 
-<script src="js/palettes.js?v=20261015h"></script>
-<script src="js/categories.js?v=20261015h"></script>
-<script src="js/plates.js?v=20261015h"></script>
-<script src="js/svg-context.js?v=20261015h"></script>
-<script src="js/engine.js?v=20261015h"></script>
-<script src="js/config.js?v=20261015h"></script>
+<script src="js/palettes.js?v=20261016e"></script>
+<script src="js/categories.js?v=20261016e"></script>
+<script src="js/plates.js?v=20261016e"></script>
+<script src="js/svg-context.js?v=20261016e"></script>
+<script src="js/engine.js?v=20261016e"></script>
+<script src="js/config.js?v=20261016e"></script>
 <!-- 纹样文化知识库 + 检索增强（纹博士对话的事实底座，纯本地、可溯源） -->
-<script src="js/knowledge.js?v=20261015h"></script>
-<script src="js/guides.js?v=20261015h"></script>
+<script src="js/knowledge.js?v=20261016e"></script>
+<script src="js/guides.js?v=20261016e"></script>
 <!-- 演示缓存：预生成 AI 结果，无 Key / 断网时也能展示人机协同环节（页内明确标注为示例） -->
-<script src="js/demo.js?v=20261015h"></script>
-<script src="js/llm.js?v=20261015h"></script>
-<script src="js/agnes.js?v=20261015h"></script>
-<script src="js/mockups.js?v=20261015h"></script>
-<script src="js/sound.js?v=20261015h"></script>
-<script src="js/collection.js?v=20261015h"></script>
-<script src="js/app.js?v=20261015h"></script>
-<script src="js/sharecard.js?v=20261015h"></script>
-<script src="js/animations.js?v=20261015h"></script>
+<script src="js/demo.js?v=20261016e"></script>
+<script src="js/llm.js?v=20261016e"></script>
+<script src="js/agnes.js?v=20261016e"></script>
+<script src="js/mockups.js?v=20261016e"></script>
+<script src="js/sound.js?v=20261016e"></script>
+<script src="js/collection.js?v=20261016e"></script>
+<script src="js/app.js?v=20261016e"></script>
+<script src="js/sharecard.js?v=20261016e"></script>
+<script src="js/animations.js?v=20261016e"></script>
 <!-- 一幅纹样的旅程（P1-4）：把五大展厅串成一条可走完的线；依赖 showPage，故置于 app.js 之后 -->
-<script src="js/journey.js?v=20261015h"></script>
+<script src="js/journey.js?v=20261016e"></script>
 <!-- 纹样对比（P1-5）：两幅真迹并排看谱系/器物考/寓意差异；依赖 Plates / Engine / state -->
-<script src="js/compare.js?v=20261015h"></script>
+<script src="js/compare.js?v=20261016e"></script>
 <!-- 纹样挑战（P1-6）：60 秒按谱系/寓意/器物找真迹，答对即入册；依赖 Plates / Collection -->
-<script src="js/challenge.js?v=20261015h"></script>
+<script src="js/challenge.js?v=20261016e"></script>
 <!-- 纹博士悬浮对话导览：依赖 Guides / LLM / Plates，故置于最后 -->
-<script src="js/guru.js?v=20261015h"></script>
+<script src="js/guru.js?v=20261016e"></script>
 
 <!-- ============ 中英双语（2026-10-14 新增） ============
      顺序有讲究：i18n.js 必须是字典文件的**第一个**——各字典都是
@@ -713,14 +716,14 @@
      同理它必须排在所有业务脚本之前，因为业务脚本在 DOMContentLoaded 里
      渲染界面时会调用 I18n.t()；而 I18n.init() 本身也挂在 DOMContentLoaded
      上，且本文件的 listener 注册早于 app.js（先注册先执行），所以词典一定齐了。 -->
-<script src="js/i18n.js?v=20261015h"></script>
-<script src="js/i18n.dict.plates.js?v=20261015h"></script>
-<script src="js/i18n.dict.journey.js?v=20261015h"></script>
-<script src="js/i18n.dict.challenge.js?v=20261015h"></script>
-<script src="js/i18n.dict.p1.js?v=20261015h"></script>
-<script src="js/i18n.dict.knowledge.js?v=20261015h"></script>
-<script src="js/i18n.dict.ui.js?v=20261015h"></script>
-<script src="js/i18n.dict.misc.js?v=20261015h"></script>
-<script src="js/i18n.dict.late.js?v=20261015h"></script>
+<script src="js/i18n.js?v=20261016e"></script>
+<script src="js/i18n.dict.plates.js?v=20261016e"></script>
+<script src="js/i18n.dict.journey.js?v=20261016e"></script>
+<script src="js/i18n.dict.challenge.js?v=20261016e"></script>
+<script src="js/i18n.dict.p1.js?v=20261016e"></script>
+<script src="js/i18n.dict.knowledge.js?v=20261016e"></script>
+<script src="js/i18n.dict.ui.js?v=20261016e"></script>
+<script src="js/i18n.dict.misc.js?v=20261016e"></script>
+<script src="js/i18n.dict.late.js?v=20261016e"></script>
 </body>
 </html>

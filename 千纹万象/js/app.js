@@ -1088,6 +1088,8 @@ function fillProtoForm(proto) {
   set("#mediaProtoImageHeaders", proto.image.headers);
   set("#mediaProtoCreatePath", proto.video.createPath);
   set("#mediaProtoCreateBody", proto.video.createBody);
+  set("#mediaProtoAltMatch", proto.video.altMatch);
+  set("#mediaProtoAltBody", proto.video.altCreateBody);
   set("#mediaProtoIdField", proto.video.idField);
   set("#mediaProtoPollPath", proto.video.pollPath);
   set("#mediaProtoPollBase", proto.video.pollBase);
@@ -1121,11 +1123,17 @@ function readProtoForm() {
   };
   const imgBody = raw("#mediaProtoImageBody").trim();
   const vidBody = raw("#mediaProtoCreateBody").trim();
+  const altBody = raw("#mediaProtoAltBody").trim();
   const imgHeaders = raw("#mediaProtoImageHeaders").trim();
   const vidHeaders = raw("#mediaProtoVideoHeaders").trim();
   const err = checkJson(imgBody, I18n.t("图像请求体模板"))
     || checkJson(vidBody, I18n.t("视频创建请求体模板"));
   if (err) return { err };
+  /* 备用请求体是可选项：留空 = 不使用（默认行为不变），填了才校验 JSON */
+  if (altBody) {
+    const aerr = checkJson(altBody, I18n.t("备用请求体模板"));
+    if (aerr) return { err: aerr };
+  }
   const checkHeaders = (text) => {
     if (!text) return null;
     try {
@@ -1147,6 +1155,7 @@ function readProtoForm() {
       image: { path: imgPath, body: imgBody, resultField: val("#mediaProtoImageResult"), headers: imgHeaders },
       video: {
         createPath: createPath, createBody: vidBody, idField: val("#mediaProtoIdField"),
+        altMatch: val("#mediaProtoAltMatch"), altCreateBody: altBody,
         pollPath: pollPath, pollBase: val("#mediaProtoPollBase"),
         pollIntervalMs: Math.max(1000, parseInt(val("#mediaProtoPollInterval"), 10) || 3000),
         statusField: val("#mediaProtoStatus"), okValues: val("#mediaProtoOk"), failValues: val("#mediaProtoFail"),

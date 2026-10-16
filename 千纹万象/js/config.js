@@ -83,6 +83,13 @@ const LLM_CONFIG = {
   /* 网络抖动重试：只在"一个字都没吐出来"时重试。 */
   chatRetries: 2,
 
+  /* 签文单轮输出额度。旧值 800 是按"直答模型"定的；换成带深度思考的模型后
+   * （如 DeepSeek 官方 deepseek-flash 默认 effort=high），推理与正文共享
+   * 这份额度，800 会被推理吃光 → finish_reason=length 而正文为空，
+   * 表现为"签文总是降级成本地规则签文"。实测 1500 起稳定成功，
+   * 这里给 4096 留足余量（上限而非预扣，对不推理的模型无代价）。 */
+  qianMaxTokens: 4096,
+
   /* 自定义接口的 Key 存储键（与旧版同名，老用户已存的 Key 继续有效） */
   keyStorageKey: "qianwen_llm_key",
   /* 当前接入目标本身的持久化键 */
@@ -171,6 +178,15 @@ const CUSTOM_PROTO_DEFAULTS = {
   video: {
     createPath: "/v1/videos",
     createBody: '{\n  "model": "{model}",\n  "prompt": "{prompt}",\n  "images": ["{image}"],\n  "seconds": "{seconds}"\n}',
+    /* 备用请求体（可选）：同一条备用链上不同代际的模型，参数形状可能不通用。
+     * 实测教训（2026-10-16）：百炼 wan2.7+ 收 input.media 对象数组，
+     * wan2.6 及更早**只收 input.img_url 字符串**——写错形状时任务先受理成功
+     * （返回 task_id），十几秒后才 FAILED: Field required: input.img_url。
+     * 于是"额度耗尽自动降级"会降到一个用不了形状的模型上，白白失败。
+     * altMatch 填模型名片段（逗号分隔，不区分大小写），命中则改用 altCreateBody。
+     * 两者留空 = 不使用备用体（默认行为完全不变）。 */
+    altMatch: "",
+    altCreateBody: "",
     idField: "",
     pollPath: "/v1/videos/{taskId}",
     pollBase: "",
@@ -208,7 +224,11 @@ const CUSTOM_PROTO_PRESETS = {
       },
       video: {
         createPath: "/api/v1/services/aigc/video-generation/video-synthesis",
-        createBody: '{\n  "model": "{model}",\n  "input": {\n    "prompt": "{prompt}",\n    "media": [{ "url": "{image}", "type": "first_frame" }]\n  },\n  "parameters": { "resolution": "720P", "duration": "{seconds}" }\n}',
+        createBody: '{\n  "model": "{model}",\n  "input": {\n    "prompt": "{prompt}",\n    "media": [{ "url": "{image}", "type": "first_frame" }]\n  },\n  "parameters": { "resolution": "720P", "duration": "{seconds:num}" }\n}',
+        /* wan2.6 及更早收 img_url 字符串（实测：写错形状会"先受理后失败"）。
+           备用链跨代混填时，命中这些片段的模型自动改用下面这个体。 */
+        altMatch: "wan2.6,wan2.5,wan2.2,wanx",
+        altCreateBody: '{\n  "model": "{model}",\n  "input": {\n    "prompt": "{prompt}",\n    "img_url": "{image}"\n  },\n  "parameters": { "resolution": "720P", "duration": "{seconds:num}" }\n}',
         idField: "task_id",
         pollPath: "/api/v1/tasks/{taskId}",
         statusField: "task_status",
